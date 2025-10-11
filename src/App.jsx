@@ -600,13 +600,13 @@ X-WR-TIMEZONE:Europe/Paris
 
       seance.blocs.forEach((bloc, indexBloc) => {
         const repetitionsBloc = parseInt(bloc.repetitions) || 1
-        description += `Bloc ${indexBloc + 1}`
+        description += `Bloc ${indexBloc + 1} - ${getBlocTypeLabel(bloc.type || 'course')}`
         if (repetitionsBloc > 1) {
           description += ` (×${repetitionsBloc})`
         }
         description += `:\\n`
 
-        bloc.series.forEach((serie, indexSerie) => {
+        bloc.series.forEach((serie) => {
           const repetitionsSerie = parseInt(serie.repetitions) || 1
           const distance = parseFloat(serie.distance) || 0
 
@@ -702,8 +702,10 @@ END:VEVENT
   // Ajouter un nouveau bloc
   const ajouterBloc = () => {
     setBlocs([...blocs, {
+      type: 'course', // 'echauffement', 'course', ou 'recuperation'
       repetitions: 1,
       series: [{
+        estRecuperation: false, // false = série normale, true = récupération
         repetitions: 1,
         typePlage: 'fixe', // 'fixe' ou 'plage'
         pourcentageVMA: '',
@@ -721,7 +723,9 @@ END:VEVENT
         distanceMin: '',
         distanceMax: '',
         tempsMin: '',
-        tempsMax: ''
+        tempsMax: '',
+        // Récupération attachée à la série (optionnelle)
+        recuperation: null
       }]
     }])
   }
@@ -746,10 +750,56 @@ END:VEVENT
     setBlocs(nouveauxBlocs)
   }
 
+  // Mettre à jour le type d'un bloc
+  const updateTypeBlocFunc = (indexBloc, type) => {
+    const nouveauxBlocs = [...blocs]
+    nouveauxBlocs[indexBloc].type = type
+    setBlocs(nouveauxBlocs)
+  }
+
+  // Obtenir le style selon le type de bloc
+  const getBlocStyle = (type) => {
+    switch (type) {
+      case 'echauffement':
+        return {
+          borderColor: '#ff9800',
+          backgroundColor: '#fff3e0',
+          labelColor: '#e65100'
+        }
+      case 'recuperation':
+        return {
+          borderColor: '#4caf50',
+          backgroundColor: '#e8f5e9',
+          labelColor: '#2e7d32'
+        }
+      case 'course':
+      default:
+        return {
+          borderColor: '#dee2e6',
+          backgroundColor: '#fff',
+          labelColor: '#495057'
+        }
+    }
+  }
+
+  // Obtenir le libellé du type de bloc
+  const getBlocTypeLabel = (type) => {
+    switch (type) {
+      case 'echauffement':
+        return 'Échauffement'
+      case 'recuperation':
+        return 'Récupération'
+      case 'course':
+      default:
+        return 'Course'
+    }
+  }
+
   // Ajouter une série à un bloc
   const ajouterSerie = (indexBloc) => {
     const nouveauxBlocs = [...blocs]
     nouveauxBlocs[indexBloc].series.push({
+      estRecuperation: false,
       repetitions: 1,
       typePlage: 'fixe',
       pourcentageVMA: '',
@@ -766,8 +816,157 @@ END:VEVENT
       distanceMin: '',
       distanceMax: '',
       tempsMin: '',
-      tempsMax: ''
+      tempsMax: '',
+      recuperation: null
     })
+    setBlocs(nouveauxBlocs)
+  }
+
+  // Ajouter une récupération à un bloc (série indépendante)
+  const ajouterRecuperationSerie = (indexBloc) => {
+    const nouveauxBlocs = [...blocs]
+    nouveauxBlocs[indexBloc].series.push({
+      estRecuperation: true,
+      repetitions: 1,
+      typePlage: 'fixe',
+      pourcentageVMA: '',
+      pourcentageAllureMarathon: '',
+      allure: '',
+      distance: '',
+      temps: '',
+      pourcentageVMAMin: '',
+      pourcentageVMAMax: '',
+      pourcentageAllureMarathonMin: '',
+      pourcentageAllureMarathonMax: '',
+      allureMin: '',
+      allureMax: '',
+      distanceMin: '',
+      distanceMax: '',
+      tempsMin: '',
+      tempsMax: '',
+      recuperation: null
+    })
+    setBlocs(nouveauxBlocs)
+  }
+
+  // Ajouter une récupération attachée à une série
+  const ajouterRecuperation = (indexBloc, indexSerie) => {
+    const nouveauxBlocs = [...blocs]
+    nouveauxBlocs[indexBloc].series[indexSerie].recuperation = {
+      typePlage: 'fixe',
+      pourcentageVMA: '',
+      pourcentageAllureMarathon: '',
+      allure: '',
+      distance: '',
+      temps: '',
+      pourcentageVMAMin: '',
+      pourcentageVMAMax: '',
+      pourcentageAllureMarathonMin: '',
+      pourcentageAllureMarathonMax: '',
+      allureMin: '',
+      allureMax: '',
+      distanceMin: '',
+      distanceMax: '',
+      tempsMin: '',
+      tempsMax: ''
+    }
+    setBlocs(nouveauxBlocs)
+  }
+
+  // Supprimer une récupération attachée à une série
+  const supprimerRecuperation = (indexBloc, indexSerie) => {
+    const nouveauxBlocs = [...blocs]
+    nouveauxBlocs[indexBloc].series[indexSerie].recuperation = null
+    setBlocs(nouveauxBlocs)
+  }
+
+  // Mettre à jour une récupération attachée
+  const updateRecuperation = (indexBloc, indexSerie, field, value) => {
+    const nouveauxBlocs = [...blocs]
+    const recuperation = { ...nouveauxBlocs[indexBloc].series[indexSerie].recuperation }
+
+    if (field === 'typePlage') {
+      recuperation.typePlage = value
+    }
+
+    if (field === 'pourcentageVMA') {
+      recuperation.pourcentageVMA = value
+      const allure = calculerAllureDepuisVMA(vma, value)
+      if (allure) {
+        recuperation.allure = formaterAllure(allure)
+        if (recuperation.distance) {
+          const temps = calculerTemps(recuperation.distance, allure)
+          recuperation.temps = temps ? formaterTemps(temps) : ''
+        }
+        if (allureMarathon) {
+          const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+          recuperation.pourcentageAllureMarathon = pourcentageAllureMarathon ? Math.round(pourcentageAllureMarathon / 5) * 5 : ''
+        }
+      }
+    }
+
+    if (field === 'pourcentageAllureMarathon') {
+      recuperation.pourcentageAllureMarathon = value
+      const allure = calculerAllureDepuisAllureMarathon(value)
+      if (allure) {
+        recuperation.allure = formaterAllure(allure)
+        if (recuperation.distance) {
+          const temps = calculerTemps(recuperation.distance, allure)
+          recuperation.temps = temps ? formaterTemps(temps) : ''
+        }
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          recuperation.pourcentageVMA = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
+      }
+    }
+
+    if (field === 'allure') {
+      recuperation.allure = value
+      const allureMinutes = parserAllure(value)
+      if (vma && allureMinutes) {
+        const pourcentage = calculerPourcentageVMA(vma, allureMinutes)
+        recuperation.pourcentageVMA = Math.round(pourcentage / 5) * 5
+      }
+      if (allureMarathon && allureMinutes) {
+        const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allureMinutes)
+        recuperation.pourcentageAllureMarathon = Math.round(pourcentageAllureMarathon / 5) * 5
+      }
+      if (recuperation.distance && allureMinutes) {
+        const temps = calculerTemps(recuperation.distance, allureMinutes)
+        recuperation.temps = temps ? formaterTemps(temps) : ''
+      }
+    }
+
+    if (field === 'distance') {
+      recuperation.distance = value
+      const allureMinutes = parserAllure(recuperation.allure)
+      if (allureMinutes) {
+        const temps = calculerTemps(value, allureMinutes)
+        recuperation.temps = temps ? formaterTemps(temps) : ''
+      }
+    }
+
+    if (field === 'temps') {
+      recuperation.temps = value
+      const tempsSecondes = parserTemps(value)
+      if (recuperation.distance && tempsSecondes) {
+        const allure = calculerAllure(recuperation.distance, tempsSecondes)
+        if (allure) {
+          recuperation.allure = formaterAllure(allure)
+          if (vma) {
+            const pourcentage = calculerPourcentageVMA(vma, allure)
+            recuperation.pourcentageVMA = Math.round(pourcentage / 5) * 5
+          }
+          if (allureMarathon) {
+            const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+            recuperation.pourcentageAllureMarathon = Math.round(pourcentageAllureMarathon / 5) * 5
+          }
+        }
+      }
+    }
+
+    nouveauxBlocs[indexBloc].series[indexSerie].recuperation = recuperation
     setBlocs(nouveauxBlocs)
   }
 
@@ -1582,11 +1781,26 @@ END:VEVENT
           />
         </div>
 
-      {blocs.map((bloc, indexBloc) => (
-        <div key={indexBloc} className="bloc-container">
+      {blocs.map((bloc, indexBloc) => {
+        const blocStyle = getBlocStyle(bloc.type || 'course')
+        // Calculer le numéro de course en comptant uniquement les blocs de type 'course' avant celui-ci
+        const numeroCourse = blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
+        return (
+        <div
+          key={indexBloc}
+          className="bloc-container"
+          style={{
+            borderColor: blocStyle.borderColor,
+            backgroundColor: blocStyle.backgroundColor
+          }}
+        >
           <div className="bloc-header">
             <div className="bloc-title">
-              <h2>Bloc {indexBloc + 1}</h2>
+              <h2 style={{ color: blocStyle.labelColor }}>
+                {(bloc.type || 'course') === 'echauffement' && 'Échauffement'}
+                {(bloc.type || 'course') === 'course' && `Course ${numeroCourse}`}
+                {(bloc.type || 'course') === 'recuperation' && 'Récupération'}
+              </h2>
               <TextField
                 label="Répétitions du bloc"
                 type="number"
@@ -1599,30 +1813,82 @@ END:VEVENT
               />
             </div>
             <div className="bloc-actions">
-              <button className="btn-secondary" onClick={() => ajouterSerie(indexBloc)}>+ Série</button>
+              {(bloc.type || 'course') === 'course' && (
+                <>
+                  <button className="btn-secondary" onClick={() => ajouterSerie(indexBloc)}>+ Série</button>
+                  <button className="btn-secondary" onClick={() => ajouterRecuperationSerie(indexBloc)}>+ Récupération</button>
+                </>
+              )}
               <button className="btn-secondary" onClick={() => dupliquerBloc(indexBloc)}>Dupliquer</button>
               <button className="btn-danger" onClick={() => supprimerBloc(indexBloc)}>Supprimer</button>
             </div>
           </div>
 
+          {/* Sélecteur de type de bloc */}
+          <div className="serie-type-selector" style={{ marginBottom: '1rem', background: 'rgba(255,255,255,0.6)' }}>
+            <label>
+              <input
+                type="radio"
+                name={`bloc-type-${indexBloc}`}
+                value="echauffement"
+                checked={(bloc.type || 'course') === 'echauffement'}
+                onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
+              />
+              🔥 Échauffement
+            </label>
+            <label>
+              <input
+                type="radio"
+                name={`bloc-type-${indexBloc}`}
+                value="course"
+                checked={(bloc.type || 'course') === 'course'}
+                onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
+              />
+              🏃 Course
+            </label>
+            <label>
+              <input
+                type="radio"
+                name={`bloc-type-${indexBloc}`}
+                value="recuperation"
+                checked={(bloc.type || 'course') === 'recuperation'}
+                onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
+              />
+              💤 Récupération
+            </label>
+          </div>
+
           {bloc.series.map((serie, indexSerie) => (
-            <div key={indexSerie} className="serie-row">
+            <div
+              key={indexSerie}
+              className="serie-row"
+              style={serie.estRecuperation ? {
+                background: '#fff8e1',
+                border: '2px solid #ffd54f'
+              } : {}}
+            >
               <div className="serie-header">
                 <div className="serie-title">
-                  <span>Série {indexSerie + 1}</span>
-                  <TextField
-                    label="Répétitions"
-                    type="number"
-                    value={serie.repetitions}
-                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'repetitions', e.target.value)}
-                    onFocus={handleFocus}
-                    size="small"
-                    inputProps={{ min: 1 }}
-                    sx={{ width: '120px' }}
-                  />
+                  {(bloc.type || 'course') === 'course' && (
+                    <span>{serie.estRecuperation ? '💤 Récupération' : `Série ${indexSerie + 1}`}</span>
+                  )}
+                  {(bloc.type || 'course') === 'course' && (
+                    <TextField
+                      label="Répétitions"
+                      type="number"
+                      value={serie.repetitions}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'repetitions', e.target.value)}
+                      onFocus={handleFocus}
+                      size="small"
+                      inputProps={{ min: 1 }}
+                      sx={{ width: '120px' }}
+                    />
+                  )}
                 </div>
                 <div className="serie-actions">
-                  <button className="btn-small-secondary" onClick={() => dupliquerSerie(indexBloc, indexSerie)}>⎘</button>
+                  {(bloc.type || 'course') === 'course' && (
+                    <button className="btn-small-secondary" onClick={() => dupliquerSerie(indexBloc, indexSerie)}>⎘</button>
+                  )}
                   {bloc.series.length > 1 && (
                     <button className="btn-small-danger" onClick={() => supprimerSerie(indexBloc, indexSerie)}>×</button>
                   )}
@@ -1921,10 +2187,136 @@ END:VEVENT
                   </Box>
                 </Box>
               )}
+
+              {/* Bouton et section Récupération attachée à la série */}
+              {!serie.estRecuperation && (bloc.type || 'course') === 'course' && (
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f8f9fa', borderRadius: '6px' }}>
+                  {!serie.recuperation ? (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => ajouterRecuperation(indexBloc, indexSerie)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                      + Ajouter récupération
+                    </button>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '2px solid #dee2e6' }}>
+                        <span style={{ fontWeight: 600, color: '#495057' }}>Récupération</span>
+                        <button className="btn-small-danger" onClick={() => supprimerRecuperation(indexBloc, indexSerie)}>× Supprimer</button>
+                      </div>
+
+                      <div className="serie-type-selector" style={{ marginBottom: '0.75rem' }}>
+                        <label>
+                          <input
+                            type="radio"
+                            name={`recup-type-${indexBloc}-${indexSerie}`}
+                            value="fixe"
+                            checked={serie.recuperation.typePlage === 'fixe'}
+                            onChange={(e) => updateRecuperation(indexBloc, indexSerie, 'typePlage', e.target.value)}
+                          />
+                          Allure fixe
+                        </label>
+                        <label>
+                          <input
+                            type="radio"
+                            name={`recup-type-${indexBloc}-${indexSerie}`}
+                            value="plage"
+                            checked={serie.recuperation.typePlage === 'plage'}
+                            onChange={(e) => updateRecuperation(indexBloc, indexSerie, 'typePlage', e.target.value)}
+                          />
+                          Plage d'allures
+                        </label>
+                      </div>
+
+                      {serie.recuperation.typePlage === 'fixe' ? (
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                          <TextField
+                            label="Distance"
+                            type="number"
+                            value={serie.recuperation.distance}
+                            onChange={(e) => updateRecuperation(indexBloc, indexSerie, 'distance', e.target.value)}
+                            onFocus={handleFocus}
+                            placeholder="200"
+                            size="small"
+                            sx={{ width: '120px' }}
+                            InputProps={{
+                              endAdornment: <InputAdornment position="end">m</InputAdornment>
+                            }}
+                          />
+                          <TextField
+                            label="VMA"
+                            type="number"
+                            value={serie.recuperation.pourcentageVMA}
+                            onChange={(e) => updateRecuperation(indexBloc, indexSerie, 'pourcentageVMA', e.target.value)}
+                            onFocus={handleFocus}
+                            placeholder="60"
+                            size="small"
+                            disabled={!vma}
+                            inputProps={{ step: 5 }}
+                            sx={{ width: '100px' }}
+                            InputProps={{
+                              endAdornment: <InputAdornment position="end">%</InputAdornment>
+                            }}
+                          />
+                          <TextField
+                            label="Allure Marathon"
+                            type="number"
+                            value={serie.recuperation.pourcentageAllureMarathon}
+                            onChange={(e) => updateRecuperation(indexBloc, indexSerie, 'pourcentageAllureMarathon', e.target.value)}
+                            onFocus={handleFocus}
+                            placeholder="80"
+                            size="small"
+                            disabled={!allureMarathon}
+                            inputProps={{ step: 5 }}
+                            sx={{ width: '140px' }}
+                            InputProps={{
+                              endAdornment: <InputAdornment position="end">%</InputAdornment>
+                            }}
+                          />
+                          <TextField
+                            label="Allure"
+                            value={serie.recuperation.allure}
+                            onChange={(e) => {
+                              const formatted = formatAllureInput(e.target.value)
+                              updateRecuperation(indexBloc, indexSerie, 'allure', formatted)
+                            }}
+                            onFocus={handleFocus}
+                            placeholder="600"
+                            size="small"
+                            sx={{ width: '140px' }}
+                            InputProps={{
+                              endAdornment: <InputAdornment position="end">min/km</InputAdornment>
+                            }}
+                          />
+                          <TextField
+                            label="Temps"
+                            value={serie.recuperation.temps}
+                            onChange={(e) => {
+                              const formatted = formatTempsInput(e.target.value)
+                              updateRecuperation(indexBloc, indexSerie, 'temps', formatted)
+                            }}
+                            onFocus={handleFocus}
+                            placeholder="100"
+                            size="small"
+                            sx={{ width: '150px' }}
+                          />
+                        </Box>
+                      ) : (
+                        <div style={{ fontSize: '0.85rem', color: '#6c757d', fontStyle: 'italic' }}>
+                          Le mode plage pour les récupérations sera bientôt disponible
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           ))}
         </div>
-      ))}
+        )
+      })}
 
       {blocs.length > 0 && (
         <div className="summary">
@@ -1949,7 +2341,7 @@ END:VEVENT
               return (
                 <div key={indexBloc} className="summary-bloc">
                   <div className="summary-bloc-title">
-                    Bloc {indexBloc + 1} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                    Bloc {indexBloc + 1} - {getBlocTypeLabel(bloc.type || 'course')} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
                   </div>
                   <div className="summary-series-list">
                     {bloc.series.map((serie, indexSerie) => {
@@ -1964,7 +2356,12 @@ END:VEVENT
                         const distanceTotaleMax = distanceMax * repetitionsSerie * repetitionsBloc
 
                         return (
-                          <div key={indexSerie} className="summary-serie-item summary-serie-plage">
+                          <div
+                            key={indexSerie}
+                            className="summary-serie-item summary-serie-plage"
+                            style={serie.estRecuperation ? { background: '#fff8e1', border: '1px solid #ffd54f' } : {}}
+                          >
+                            {serie.estRecuperation && <span>💤</span>}
                             <span className="summary-serie-count">{repetitionsSerie}×</span>
                             {serie.distanceMin && serie.distanceMax ? (
                               <span className="summary-serie-distance">{distanceMin}m - {distanceMax}m</span>
@@ -1992,7 +2389,12 @@ END:VEVENT
                       }
 
                       return (
-                        <div key={indexSerie} className="summary-serie-item">
+                        <div
+                          key={indexSerie}
+                          className="summary-serie-item"
+                          style={serie.estRecuperation ? { background: '#fff8e1', border: '1px solid #ffd54f' } : {}}
+                        >
+                          {serie.estRecuperation && <span>💤</span>}
                           <span className="summary-serie-count">{repetitionsSerie}×</span>
                           <span className="summary-serie-distance">{distance}m</span>
                           {serie.allure && (
@@ -2144,7 +2546,7 @@ END:VEVENT
                           return (
                             <div key={indexBloc} style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid #dee2e6' }}>
                               <div style={{ fontWeight: 600, color: '#495057', marginBottom: '0.5rem' }}>
-                                Bloc {indexBloc + 1} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                                Bloc {indexBloc + 1} - {getBlocTypeLabel(bloc.type || 'course')} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                 {bloc.series.map((serie, indexSerie) => {
@@ -2158,7 +2560,7 @@ END:VEVENT
 
                                     return (
                                       <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
-                                        • {repetitionsSerie}× {serie.distanceMin && serie.distanceMax ? `${distanceMin}-${distanceMax}m` : `${distance}m`}
+                                        {serie.estRecuperation && '💤 '} • {repetitionsSerie}× {serie.distanceMin && serie.distanceMax ? `${distanceMin}-${distanceMax}m` : `${distance}m`}
                                         {serie.allureMin && serie.allureMax && ` @ ${serie.allureMin}-${serie.allureMax}/km`}
                                         {serie.pourcentageVMAMin && serie.pourcentageVMAMax && ` (${serie.pourcentageVMAMin}-${serie.pourcentageVMAMax}% VMA)`}
                                         {serie.tempsMin && serie.tempsMax && ` en ${formaterTempsLisible(serie.tempsMin)}-${formaterTempsLisible(serie.tempsMax)}`}
@@ -2171,7 +2573,7 @@ END:VEVENT
 
                                   return (
                                     <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
-                                      • {repetitionsSerie}× {distance}m
+                                      {serie.estRecuperation && '💤 '} • {repetitionsSerie}× {distance}m
                                       {serie.allure && ` @ ${serie.allure}/km`}
                                       {serie.pourcentageVMA && ` (${serie.pourcentageVMA}% VMA)`}
                                       {serie.temps && ` en ${formaterTempsLisible(serie.temps)}`}
