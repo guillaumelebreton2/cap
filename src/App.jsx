@@ -19,6 +19,15 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import FileUploadIcon from '@mui/icons-material/FileUpload'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment'
+import DirectionsRunIcon from '@mui/icons-material/DirectionsRun'
+import HotelIcon from '@mui/icons-material/Hotel'
+import EventIcon from '@mui/icons-material/Event'
+import CommentIcon from '@mui/icons-material/Comment'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -270,14 +279,47 @@ function App() {
 
   // Calculer la distance totale d'une séance
   const calculerDistanceTotaleSeance = (seance) => {
-    return seance.blocs.reduce((total, bloc) => {
+    let distanceMin = 0
+    let distanceMax = 0
+    let haPlage = false
+
+    seance.blocs.forEach(bloc => {
       const repetitionsBloc = parseInt(bloc.repetitions) || 1
-      return total + bloc.series.reduce((sousTotal, serie) => {
+      bloc.series.forEach(serie => {
         const repetitionsSerie = parseInt(serie.repetitions) || 1
-        const distance = parseFloat(serie.distance) || 0
-        return sousTotal + (distance * repetitionsSerie * repetitionsBloc)
-      }, 0)
-    }, 0)
+
+        // Distance de la série
+        if (serie.typePlage === 'plage') {
+          haPlage = true
+          const dMin = parseFloat(serie.distanceMin || serie.distance) || 0
+          const dMax = parseFloat(serie.distanceMax || serie.distance) || 0
+          distanceMin += dMin * repetitionsSerie * repetitionsBloc
+          distanceMax += dMax * repetitionsSerie * repetitionsBloc
+        } else {
+          const distance = parseFloat(serie.distance) || 0
+          distanceMin += distance * repetitionsSerie * repetitionsBloc
+          distanceMax += distance * repetitionsSerie * repetitionsBloc
+        }
+
+        // Distance de la récupération attachée à la série
+        if (serie.recuperation) {
+          const recup = serie.recuperation
+          if (recup.typePlage === 'plage') {
+            haPlage = true
+            const dMin = parseFloat(recup.distanceMin || recup.distance) || 0
+            const dMax = parseFloat(recup.distanceMax || recup.distance) || 0
+            distanceMin += dMin * repetitionsSerie * repetitionsBloc
+            distanceMax += dMax * repetitionsSerie * repetitionsBloc
+          } else {
+            const distance = parseFloat(recup.distance) || 0
+            distanceMin += distance * repetitionsSerie * repetitionsBloc
+            distanceMax += distance * repetitionsSerie * repetitionsBloc
+          }
+        }
+      })
+    })
+
+    return haPlage ? { min: distanceMin, max: distanceMax, isRange: true } : distanceMin
   }
 
   // Calculer la durée totale d'une séance (en secondes)
@@ -936,6 +978,16 @@ END:VEVENT
         const temps = calculerTemps(recuperation.distance, allureMinutes)
         recuperation.temps = temps ? formaterTemps(temps) : ''
       }
+      // Si on a le temps mais pas la distance, calculer la distance
+      const distanceActuelle = parseFloat(recuperation.distance)
+      if ((!recuperation.distance || !distanceActuelle || distanceActuelle === 0) && recuperation.temps && allureMinutes) {
+        const tempsSecondes = parserTemps(recuperation.temps)
+        if (tempsSecondes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          recuperation.distance = Math.round(distanceKm * 1000)
+        }
+      }
     }
 
     if (field === 'distance') {
@@ -962,6 +1014,16 @@ END:VEVENT
             const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
             recuperation.pourcentageAllureMarathon = Math.round(pourcentageAllureMarathon / 5) * 5
           }
+        }
+      }
+      // Si on a l'allure mais pas la distance, calculer la distance
+      const distanceActuelle = parseFloat(recuperation.distance)
+      if ((!recuperation.distance || !distanceActuelle || distanceActuelle === 0) && recuperation.allure && tempsSecondes) {
+        const allureMinutes = parserAllure(recuperation.allure)
+        if (allureMinutes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          recuperation.distance = Math.round(distanceKm * 1000)
         }
       }
     }
@@ -1293,7 +1355,8 @@ END:VEVENT
         serie.temps = temps ? formaterTemps(temps) : ''
       }
       // Si on a le temps mais pas la distance, calculer la distance
-      if (!serie.distance && serie.temps && allureMinutes) {
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distance || !distanceActuelle || distanceActuelle === 0) && serie.temps && allureMinutes) {
         const tempsSecondes = parserTemps(serie.temps)
         if (tempsSecondes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1324,7 +1387,8 @@ END:VEVENT
         }
       }
       // Si on a l'allure mais pas la distance, calculer la distance
-      if (!serie.distance && serie.allure && tempsSecondes) {
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distance || !distanceActuelle || distanceActuelle === 0) && serie.allure && tempsSecondes) {
         const allureMinutes = parserAllure(serie.allure)
         if (allureMinutes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1431,7 +1495,11 @@ END:VEVENT
         serie.tempsMin = temps ? formaterTemps(temps) : ''
       }
       // Si on a le temps mais pas la distance, calculer la distance
-      if (!serie.distanceMin && !serie.distance && serie.tempsMin && allureMinutes) {
+      const distanceMinActuelle = parseFloat(serie.distanceMin)
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distanceMin || !distanceMinActuelle || distanceMinActuelle === 0) &&
+          (!serie.distance || !distanceActuelle || distanceActuelle === 0) &&
+          serie.tempsMin && allureMinutes) {
         const tempsSecondes = parserTemps(serie.tempsMin)
         if (tempsSecondes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1461,7 +1529,11 @@ END:VEVENT
         serie.tempsMax = temps ? formaterTemps(temps) : ''
       }
       // Si on a le temps mais pas la distance, calculer la distance
-      if (!serie.distanceMax && !serie.distance && serie.tempsMax && allureMinutes) {
+      const distanceMaxActuelle = parseFloat(serie.distanceMax)
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distanceMax || !distanceMaxActuelle || distanceMaxActuelle === 0) &&
+          (!serie.distance || !distanceActuelle || distanceActuelle === 0) &&
+          serie.tempsMax && allureMinutes) {
         const tempsSecondes = parserTemps(serie.tempsMax)
         if (tempsSecondes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1493,7 +1565,11 @@ END:VEVENT
         }
       }
       // Si on a l'allure mais pas la distance, calculer la distance
-      if (!serie.distanceMin && !serie.distance && serie.allureMin && tempsSecondes) {
+      const distanceMinActuelle = parseFloat(serie.distanceMin)
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distanceMin || !distanceMinActuelle || distanceMinActuelle === 0) &&
+          (!serie.distance || !distanceActuelle || distanceActuelle === 0) &&
+          serie.allureMin && tempsSecondes) {
         const allureMinutes = parserAllure(serie.allureMin)
         if (allureMinutes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1525,7 +1601,11 @@ END:VEVENT
         }
       }
       // Si on a l'allure mais pas la distance, calculer la distance
-      if (!serie.distanceMax && !serie.distance && serie.allureMax && tempsSecondes) {
+      const distanceMaxActuelle = parseFloat(serie.distanceMax)
+      const distanceActuelle = parseFloat(serie.distance)
+      if ((!serie.distanceMax || !distanceMaxActuelle || distanceMaxActuelle === 0) &&
+          (!serie.distance || !distanceActuelle || distanceActuelle === 0) &&
+          serie.allureMax && tempsSecondes) {
         const allureMinutes = parserAllure(serie.allureMax)
         if (allureMinutes) {
           const tempsMinutes = tempsSecondes / 60
@@ -1644,14 +1724,47 @@ END:VEVENT
 
   // Calculer le total
   const calculerDistanceTotale = () => {
-    return blocs.reduce((total, bloc) => {
+    let distanceMin = 0
+    let distanceMax = 0
+    let haPlage = false
+
+    blocs.forEach(bloc => {
       const repetitionsBloc = parseInt(bloc.repetitions) || 1
-      return total + bloc.series.reduce((sousTotal, serie) => {
+      bloc.series.forEach(serie => {
         const repetitionsSerie = parseInt(serie.repetitions) || 1
-        const distance = parseFloat(serie.distance) || 0
-        return sousTotal + (distance * repetitionsSerie * repetitionsBloc)
-      }, 0)
-    }, 0)
+
+        // Distance de la série
+        if (serie.typePlage === 'plage') {
+          haPlage = true
+          const dMin = parseFloat(serie.distanceMin || serie.distance) || 0
+          const dMax = parseFloat(serie.distanceMax || serie.distance) || 0
+          distanceMin += dMin * repetitionsSerie * repetitionsBloc
+          distanceMax += dMax * repetitionsSerie * repetitionsBloc
+        } else {
+          const distance = parseFloat(serie.distance) || 0
+          distanceMin += distance * repetitionsSerie * repetitionsBloc
+          distanceMax += distance * repetitionsSerie * repetitionsBloc
+        }
+
+        // Distance de la récupération attachée à la série
+        if (serie.recuperation) {
+          const recup = serie.recuperation
+          if (recup.typePlage === 'plage') {
+            haPlage = true
+            const dMin = parseFloat(recup.distanceMin || recup.distance) || 0
+            const dMax = parseFloat(recup.distanceMax || recup.distance) || 0
+            distanceMin += dMin * repetitionsSerie * repetitionsBloc
+            distanceMax += dMax * repetitionsSerie * repetitionsBloc
+          } else {
+            const distance = parseFloat(recup.distance) || 0
+            distanceMin += distance * repetitionsSerie * repetitionsBloc
+            distanceMax += distance * repetitionsSerie * repetitionsBloc
+          }
+        }
+      })
+    })
+
+    return haPlage ? { min: distanceMin, max: distanceMax, isRange: true } : distanceMin
   }
 
   // Sauvegarder la séance (création ou mise à jour)
@@ -1801,16 +1914,18 @@ END:VEVENT
                 {(bloc.type || 'course') === 'course' && `Course ${numeroCourse}`}
                 {(bloc.type || 'course') === 'recuperation' && 'Récupération'}
               </h2>
-              <TextField
-                label="Répétitions du bloc"
-                type="number"
-                value={bloc.repetitions}
-                onChange={(e) => updateRepetitionsBloc(indexBloc, e.target.value)}
-                onFocus={handleFocus}
-                size="small"
-                inputProps={{ min: 1 }}
-                sx={{ width: '150px' }}
-              />
+              {(bloc.type || 'course') === 'course' && (
+                <TextField
+                  label="Répétitions du bloc"
+                  type="number"
+                  value={bloc.repetitions}
+                  onChange={(e) => updateRepetitionsBloc(indexBloc, e.target.value)}
+                  onFocus={handleFocus}
+                  size="small"
+                  inputProps={{ min: 1 }}
+                  sx={{ width: '150px' }}
+                />
+              )}
             </div>
             <div className="bloc-actions">
               {(bloc.type || 'course') === 'course' && (
@@ -1834,7 +1949,7 @@ END:VEVENT
                 checked={(bloc.type || 'course') === 'echauffement'}
                 onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
               />
-              🔥 Échauffement
+              <LocalFireDepartmentIcon fontSize="small" /> Échauffement
             </label>
             <label>
               <input
@@ -1844,7 +1959,7 @@ END:VEVENT
                 checked={(bloc.type || 'course') === 'course'}
                 onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
               />
-              🏃 Course
+              <DirectionsRunIcon fontSize="small" /> Course
             </label>
             <label>
               <input
@@ -1854,7 +1969,7 @@ END:VEVENT
                 checked={(bloc.type || 'course') === 'recuperation'}
                 onChange={(e) => updateTypeBlocFunc(indexBloc, e.target.value)}
               />
-              💤 Récupération
+              <HotelIcon fontSize="small" /> Récupération
             </label>
           </div>
 
@@ -1870,7 +1985,13 @@ END:VEVENT
               <div className="serie-header">
                 <div className="serie-title">
                   {(bloc.type || 'course') === 'course' && (
-                    <span>{serie.estRecuperation ? '💤 Récupération' : `Série ${indexSerie + 1}`}</span>
+                    <span>
+                      {serie.estRecuperation ? (
+                        <><HotelIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} /> Récupération</>
+                      ) : (
+                        `Série ${indexSerie + 1}`
+                      )}
+                    </span>
                   )}
                   {(bloc.type || 'course') === 'course' && (
                     <TextField
@@ -2324,7 +2445,15 @@ END:VEVENT
           <div className="summary-grid">
             <div className="summary-card">
               <div className="summary-label">Distance totale</div>
-              <div className="summary-value">{(calculerDistanceTotale() / 1000).toFixed(2)} km</div>
+              <div className="summary-value">
+                {(() => {
+                  const distanceResult = calculerDistanceTotale()
+                  if (distanceResult.isRange) {
+                    return `${(distanceResult.min / 1000).toFixed(2)} - ${(distanceResult.max / 1000).toFixed(2)} km`
+                  }
+                  return `${(distanceResult / 1000).toFixed(2)} km`
+                })()}
+              </div>
             </div>
             <div className="summary-card">
               <div className="summary-label">Nombre de blocs</div>
@@ -2338,10 +2467,11 @@ END:VEVENT
           <div className="summary-details">
             {blocs.map((bloc, indexBloc) => {
               const repetitionsBloc = parseInt(bloc.repetitions) || 1
+              const blocType = bloc.type || 'course'
               return (
                 <div key={indexBloc} className="summary-bloc">
                   <div className="summary-bloc-title">
-                    Bloc {indexBloc + 1} - {getBlocTypeLabel(bloc.type || 'course')} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                    Bloc {indexBloc + 1} - {getBlocTypeLabel(blocType)} {blocType === 'course' && repetitionsBloc > 1 && `(×${repetitionsBloc})`}
                   </div>
                   <div className="summary-series-list">
                     {bloc.series.map((serie, indexSerie) => {
@@ -2349,20 +2479,23 @@ END:VEVENT
                       const distance = parseFloat(serie.distance) || 0
                       const distanceTotale = distance * repetitionsSerie * repetitionsBloc
 
+                      const serieElements = []
+
+                      // Affichage de la série
                       if (serie.typePlage === 'plage') {
                         const distanceMin = parseFloat(serie.distanceMin || serie.distance) || 0
                         const distanceMax = parseFloat(serie.distanceMax || serie.distance) || 0
                         const distanceTotaleMin = distanceMin * repetitionsSerie * repetitionsBloc
                         const distanceTotaleMax = distanceMax * repetitionsSerie * repetitionsBloc
 
-                        return (
+                        serieElements.push(
                           <div
-                            key={indexSerie}
+                            key={`serie-${indexSerie}`}
                             className="summary-serie-item summary-serie-plage"
                             style={serie.estRecuperation ? { background: '#fff8e1', border: '1px solid #ffd54f' } : {}}
                           >
-                            {serie.estRecuperation && <span>💤</span>}
-                            <span className="summary-serie-count">{repetitionsSerie}×</span>
+                            {serie.estRecuperation && <HotelIcon fontSize="small" style={{ marginRight: '4px' }} />}
+                            {blocType === 'course' && <span className="summary-serie-count">{repetitionsSerie}×</span>}
                             {serie.distanceMin && serie.distanceMax ? (
                               <span className="summary-serie-distance">{distanceMin}m - {distanceMax}m</span>
                             ) : (
@@ -2386,31 +2519,103 @@ END:VEVENT
                             )}
                           </div>
                         )
+                      } else {
+                        serieElements.push(
+                          <div
+                            key={`serie-${indexSerie}`}
+                            className="summary-serie-item"
+                            style={serie.estRecuperation ? { background: '#fff8e1', border: '1px solid #ffd54f' } : {}}
+                          >
+                            {serie.estRecuperation && <HotelIcon fontSize="small" style={{ marginRight: '4px' }} />}
+                            {blocType === 'course' && <span className="summary-serie-count">{repetitionsSerie}×</span>}
+                            <span className="summary-serie-distance">{distance}m</span>
+                            {serie.allure && (
+                              <span className="summary-serie-allure">
+                                @ {serie.allure}/km
+                              </span>
+                            )}
+                            {serie.pourcentageVMA && (
+                              <span className="summary-serie-vma">({serie.pourcentageVMA}% VMA)</span>
+                            )}
+                            {serie.temps && (
+                              <span className="summary-serie-temps">en {formaterTempsLisible(serie.temps)}</span>
+                            )}
+                            <span className="summary-serie-total">= {(distanceTotale / 1000).toFixed(2)}km</span>
+                          </div>
+                        )
                       }
 
-                      return (
-                        <div
-                          key={indexSerie}
-                          className="summary-serie-item"
-                          style={serie.estRecuperation ? { background: '#fff8e1', border: '1px solid #ffd54f' } : {}}
-                        >
-                          {serie.estRecuperation && <span>💤</span>}
-                          <span className="summary-serie-count">{repetitionsSerie}×</span>
-                          <span className="summary-serie-distance">{distance}m</span>
-                          {serie.allure && (
-                            <span className="summary-serie-allure">
-                              @ {serie.allure}/km
-                            </span>
-                          )}
-                          {serie.pourcentageVMA && (
-                            <span className="summary-serie-vma">({serie.pourcentageVMA}% VMA)</span>
-                          )}
-                          {serie.temps && (
-                            <span className="summary-serie-temps">en {formaterTempsLisible(serie.temps)}</span>
-                          )}
-                          <span className="summary-serie-total">= {(distanceTotale / 1000).toFixed(2)}km</span>
-                        </div>
-                      )
+                      // Affichage de la récupération attachée à la série
+                      if (serie.recuperation && !serie.estRecuperation) {
+                        const recup = serie.recuperation
+                        const distanceRecup = parseFloat(recup.distance) || 0
+                        const distanceTotaleRecup = distanceRecup * repetitionsSerie * repetitionsBloc
+
+                        if (recup.typePlage === 'plage') {
+                          const distanceMinRecup = parseFloat(recup.distanceMin || recup.distance) || 0
+                          const distanceMaxRecup = parseFloat(recup.distanceMax || recup.distance) || 0
+                          const distanceTotaleMinRecup = distanceMinRecup * repetitionsSerie * repetitionsBloc
+                          const distanceTotaleMaxRecup = distanceMaxRecup * repetitionsSerie * repetitionsBloc
+
+                          serieElements.push(
+                            <div
+                              key={`recup-${indexSerie}`}
+                              className="summary-serie-item summary-serie-plage"
+                              style={{ background: '#f0f0f0', border: '1px solid #ccc', paddingLeft: '2rem' }}
+                            >
+                              <HotelIcon fontSize="small" style={{ marginRight: '4px' }} />
+                              {blocType === 'course' && <span className="summary-serie-count">{repetitionsSerie}×</span>}
+                              {recup.distanceMin && recup.distanceMax ? (
+                                <span className="summary-serie-distance">{distanceMinRecup}m - {distanceMaxRecup}m</span>
+                              ) : (
+                                <span className="summary-serie-distance">{distanceRecup}m</span>
+                              )}
+                              {recup.allureMin && recup.allureMax && (
+                                <span className="summary-serie-allure">
+                                  @ {recup.allureMin} - {recup.allureMax}/km
+                                </span>
+                              )}
+                              {recup.pourcentageVMAMin && recup.pourcentageVMAMax && (
+                                <span className="summary-serie-vma">({recup.pourcentageVMAMin}% - {recup.pourcentageVMAMax}% VMA)</span>
+                              )}
+                              {recup.tempsMin && recup.tempsMax && (
+                                <span className="summary-serie-temps">en {formaterTempsLisible(recup.tempsMin)} - {formaterTempsLisible(recup.tempsMax)}</span>
+                              )}
+                              {recup.distanceMin && recup.distanceMax ? (
+                                <span className="summary-serie-total">= {(distanceTotaleMinRecup / 1000).toFixed(2)} - {(distanceTotaleMaxRecup / 1000).toFixed(2)}km</span>
+                              ) : (
+                                <span className="summary-serie-total">= {(distanceTotaleRecup / 1000).toFixed(2)}km</span>
+                              )}
+                            </div>
+                          )
+                        } else {
+                          serieElements.push(
+                            <div
+                              key={`recup-${indexSerie}`}
+                              className="summary-serie-item"
+                              style={{ background: '#f0f0f0', border: '1px solid #ccc', paddingLeft: '2rem' }}
+                            >
+                              <HotelIcon fontSize="small" style={{ marginRight: '4px' }} />
+                              {blocType === 'course' && <span className="summary-serie-count">{repetitionsSerie}×</span>}
+                              <span className="summary-serie-distance">{distanceRecup}m</span>
+                              {recup.allure && (
+                                <span className="summary-serie-allure">
+                                  @ {recup.allure}/km
+                                </span>
+                              )}
+                              {recup.pourcentageVMA && (
+                                <span className="summary-serie-vma">({recup.pourcentageVMA}% VMA)</span>
+                              )}
+                              {recup.temps && (
+                                <span className="summary-serie-temps">en {formaterTempsLisible(recup.temps)}</span>
+                              )}
+                              <span className="summary-serie-total">= {(distanceTotaleRecup / 1000).toFixed(2)}km</span>
+                            </div>
+                          )
+                        }
+                      }
+
+                      return serieElements
                     })}
                   </div>
                 </div>
@@ -2519,10 +2724,21 @@ END:VEVENT
                   <div className="historique-info">
                     <strong>{seance.nom}</strong>
                     {seance.dateSeance && (
-                      <span className="date-seance">📅 {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}</span>
+                      <span className="date-seance">
+                        <EventIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                        {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}
+                      </span>
                     )}
                     <span>{seance.blocs.length} bloc(s)</span>
-                    <span>{(calculerDistanceTotaleSeance(seance) / 1000).toFixed(2)} km</span>
+                    <span>
+                      {(() => {
+                        const distanceResult = calculerDistanceTotaleSeance(seance)
+                        if (distanceResult.isRange) {
+                          return `${(distanceResult.min / 1000).toFixed(2)} - ${(distanceResult.max / 1000).toFixed(2)} km`
+                        }
+                        return `${(distanceResult / 1000).toFixed(2)} km`
+                      })()}
+                    </span>
                     {calculerDureeTotaleSeance(seance) > 0 && (
                       <span>{formaterTempsLisible(formaterTemps(calculerDureeTotaleSeance(seance)))}</span>
                     )}
@@ -2536,17 +2752,19 @@ END:VEVENT
 
                       {seance.commentaire && (
                         <div style={{ marginBottom: '1rem', fontStyle: 'italic', color: '#495057', background: 'white', padding: '0.75rem', borderRadius: '4px', borderLeft: '3px solid #007bff' }}>
-                          💬 {seance.commentaire}
+                          <CommentIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                          {seance.commentaire}
                         </div>
                       )}
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {seance.blocs.map((bloc, indexBloc) => {
                           const repetitionsBloc = parseInt(bloc.repetitions) || 1
+                          const blocType = bloc.type || 'course'
                           return (
                             <div key={indexBloc} style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid #dee2e6' }}>
                               <div style={{ fontWeight: 600, color: '#495057', marginBottom: '0.5rem' }}>
-                                Bloc {indexBloc + 1} - {getBlocTypeLabel(bloc.type || 'course')} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                                Bloc {indexBloc + 1} - {getBlocTypeLabel(blocType)} {blocType === 'course' && repetitionsBloc > 1 && `(×${repetitionsBloc})`}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                 {bloc.series.map((serie, indexSerie) => {
@@ -2554,16 +2772,35 @@ END:VEVENT
                                   const distance = parseFloat(serie.distance) || 0
                                   const distanceTotale = distance * repetitionsSerie * repetitionsBloc
 
+                                  const serieElements = []
+
+                                  // Affichage de la série
                                   if (serie.typePlage === 'plage') {
                                     const distanceMin = parseFloat(serie.distanceMin || serie.distance) || 0
                                     const distanceMax = parseFloat(serie.distanceMax || serie.distance) || 0
+                                    const distanceTotaleMin = distanceMin * repetitionsSerie * repetitionsBloc
+                                    const distanceTotaleMax = distanceMax * repetitionsSerie * repetitionsBloc
 
-                                    return (
-                                      <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
-                                        {serie.estRecuperation && '💤 '} • {repetitionsSerie}× {serie.distanceMin && serie.distanceMax ? `${distanceMin}-${distanceMax}m` : `${distance}m`}
+                                    serieElements.push(
+                                      <div key={`serie-${indexSerie}`} style={{ paddingLeft: '1rem', color: '#495057' }}>
+                                        {serie.estRecuperation && <HotelIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />}
+                                        • {blocType === 'course' && `${repetitionsSerie}× `}{serie.distanceMin && serie.distanceMax ? `${distanceMin}-${distanceMax}m` : `${distance}m`}
                                         {serie.allureMin && serie.allureMax && ` @ ${serie.allureMin}-${serie.allureMax}/km`}
                                         {serie.pourcentageVMAMin && serie.pourcentageVMAMax && ` (${serie.pourcentageVMAMin}-${serie.pourcentageVMAMax}% VMA)`}
                                         {serie.tempsMin && serie.tempsMax && ` en ${formaterTempsLisible(serie.tempsMin)}-${formaterTempsLisible(serie.tempsMax)}`}
+                                        <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
+                                          = {(distanceTotaleMin / 1000).toFixed(2)} - {(distanceTotaleMax / 1000).toFixed(2)}km
+                                        </span>
+                                      </div>
+                                    )
+                                  } else {
+                                    serieElements.push(
+                                      <div key={`serie-${indexSerie}`} style={{ paddingLeft: '1rem', color: '#495057' }}>
+                                        {serie.estRecuperation && <HotelIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />}
+                                        • {blocType === 'course' && `${repetitionsSerie}× `}{distance}m
+                                        {serie.allure && ` @ ${serie.allure}/km`}
+                                        {serie.pourcentageVMA && ` (${serie.pourcentageVMA}% VMA)`}
+                                        {serie.temps && ` en ${formaterTempsLisible(serie.temps)}`}
                                         <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
                                           = {(distanceTotale / 1000).toFixed(2)}km
                                         </span>
@@ -2571,17 +2808,47 @@ END:VEVENT
                                     )
                                   }
 
-                                  return (
-                                    <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
-                                      {serie.estRecuperation && '💤 '} • {repetitionsSerie}× {distance}m
-                                      {serie.allure && ` @ ${serie.allure}/km`}
-                                      {serie.pourcentageVMA && ` (${serie.pourcentageVMA}% VMA)`}
-                                      {serie.temps && ` en ${formaterTempsLisible(serie.temps)}`}
-                                      <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
-                                        = {(distanceTotale / 1000).toFixed(2)}km
-                                      </span>
-                                    </div>
-                                  )
+                                  // Affichage de la récupération attachée à la série
+                                  if (serie.recuperation && !serie.estRecuperation) {
+                                    const recup = serie.recuperation
+                                    const distanceRecup = parseFloat(recup.distance) || 0
+                                    const distanceTotaleRecup = distanceRecup * repetitionsSerie * repetitionsBloc
+
+                                    if (recup.typePlage === 'plage') {
+                                      const distanceMinRecup = parseFloat(recup.distanceMin || recup.distance) || 0
+                                      const distanceMaxRecup = parseFloat(recup.distanceMax || recup.distance) || 0
+                                      const distanceTotaleMinRecup = distanceMinRecup * repetitionsSerie * repetitionsBloc
+                                      const distanceTotaleMaxRecup = distanceMaxRecup * repetitionsSerie * repetitionsBloc
+
+                                      serieElements.push(
+                                        <div key={`recup-${indexSerie}`} style={{ paddingLeft: '2rem', color: '#6c757d', fontStyle: 'italic' }}>
+                                          <HotelIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                                          • {blocType === 'course' && `${repetitionsSerie}× `}{recup.distanceMin && recup.distanceMax ? `${distanceMinRecup}-${distanceMaxRecup}m` : `${distanceRecup}m`}
+                                          {recup.allureMin && recup.allureMax && ` @ ${recup.allureMin}-${recup.allureMax}/km`}
+                                          {recup.pourcentageVMAMin && recup.pourcentageVMAMax && ` (${recup.pourcentageVMAMin}-${recup.pourcentageVMAMax}% VMA)`}
+                                          {recup.tempsMin && recup.tempsMax && ` en ${formaterTempsLisible(recup.tempsMin)}-${formaterTempsLisible(recup.tempsMax)}`}
+                                          <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
+                                            = {(distanceTotaleMinRecup / 1000).toFixed(2)} - {(distanceTotaleMaxRecup / 1000).toFixed(2)}km
+                                          </span>
+                                        </div>
+                                      )
+                                    } else {
+                                      serieElements.push(
+                                        <div key={`recup-${indexSerie}`} style={{ paddingLeft: '2rem', color: '#6c757d', fontStyle: 'italic' }}>
+                                          <HotelIcon fontSize="small" style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                                          • {blocType === 'course' && `${repetitionsSerie}× `}{distanceRecup}m
+                                          {recup.allure && ` @ ${recup.allure}/km`}
+                                          {recup.pourcentageVMA && ` (${recup.pourcentageVMA}% VMA)`}
+                                          {recup.temps && ` en ${formaterTempsLisible(recup.temps)}`}
+                                          <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
+                                            = {(distanceTotaleRecup / 1000).toFixed(2)}km
+                                          </span>
+                                        </div>
+                                      )
+                                    }
+                                  }
+
+                                  return serieElements
                                 })}
                               </div>
                             </div>
@@ -2590,7 +2857,13 @@ END:VEVENT
                       </div>
 
                       <div style={{ marginTop: '0.75rem', fontWeight: 600, color: '#6610f2', textAlign: 'right' }}>
-                        Distance totale: {(calculerDistanceTotaleSeance(seance) / 1000).toFixed(2)} km
+                        Distance totale: {(() => {
+                          const distanceResult = calculerDistanceTotaleSeance(seance)
+                          if (distanceResult.isRange) {
+                            return `${(distanceResult.min / 1000).toFixed(2)} - ${(distanceResult.max / 1000).toFixed(2)} km`
+                          }
+                          return `${(distanceResult / 1000).toFixed(2)} km`
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2611,7 +2884,15 @@ END:VEVENT
                       gap: '0.3rem'
                     }}
                   >
-                    {seancesDetailsOuvertes.includes(seance.id) ? '👁️ Masquer les détails ▲' : '👁️ Voir les détails ▼'}
+                    {seancesDetailsOuvertes.includes(seance.id) ? (
+                      <>
+                        <VisibilityOffIcon fontSize="small" /> Masquer les détails <ExpandLessIcon fontSize="small" />
+                      </>
+                    ) : (
+                      <>
+                        <VisibilityIcon fontSize="small" /> Voir les détails <ExpandMoreIcon fontSize="small" />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
