@@ -3,6 +3,17 @@ import './App.css'
 import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
 import Box from '@mui/material/Box'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -18,12 +29,25 @@ function App() {
   const [dateSeance, setDateSeance] = useState('')
   const [typingTimeouts, setTypingTimeouts] = useState({})
   const [seanceEnCoursEdition, setSeanceEnCoursEdition] = useState(null)
+  const [typeTri, setTypeTri] = useState('dateCreation') // 'dateSeance', 'dateCreation', 'manuel'
+  const [ordreManuel, setOrdreManuel] = useState([]) // Tableau d'IDs pour l'ordre manuel
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
     const historiqueStocke = localStorage.getItem('plan-marathon-historique')
     if (historiqueStocke) {
       setHistorique(JSON.parse(historiqueStocke))
+    }
+
+    // Charger les préférences de tri
+    const typTriStocke = localStorage.getItem('plan-marathon-typeTri')
+    if (typTriStocke) {
+      setTypeTri(typTriStocke)
+    }
+
+    const ordreManuelStocke = localStorage.getItem('plan-marathon-ordreManuel')
+    if (ordreManuelStocke) {
+      setOrdreManuel(JSON.parse(ordreManuelStocke))
     }
   }, [])
 
@@ -41,12 +65,25 @@ function App() {
     localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
   }
 
-  // Charger une séance depuis l'historique
-  const chargerSeance = (seance) => {
-    setVma(seance.vma || '')
-    setBlocs(seance.blocs)
-    setNomSeance(seance.nom || '')
-    setDateSeance(seance.dateSeance || '')
+  // Dupliquer une séance de l'historique
+  const dupliquerSeanceHistorique = (seance) => {
+    // Créer la copie avec un nouveau nom et sans date de séance
+    const nouvelleSeance = {
+      ...seance,
+      id: Date.now(),
+      nom: `Copie de ${seance.nom}`,
+      dateSeance: '',
+      dateCreation: new Date().toISOString(),
+      blocs: JSON.parse(JSON.stringify(seance.blocs)) // Deep copy
+    }
+
+    // Ajouter la copie à l'historique
+    const nouvelHistorique = [...historique, nouvelleSeance]
+    setHistorique(nouvelHistorique)
+    localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+
+    // Charger la copie en mode édition
+    modifierSeance(nouvelleSeance)
   }
 
   // Modifier une séance existante (charger en mode édition)
@@ -91,6 +128,87 @@ function App() {
     setVma('')
     setBlocs([])
     setDateSeance('')
+  }
+
+  // Obtenir l'historique trié
+  const obtenirHistoriqueTrie = () => {
+    let historiqueTrie = [...historique]
+
+    if (typeTri === 'dateSeance') {
+      historiqueTrie.sort((a, b) => {
+        // Les séances sans date vont à la fin
+        if (!a.dateSeance && !b.dateSeance) return 0
+        if (!a.dateSeance) return 1
+        if (!b.dateSeance) return -1
+        return new Date(b.dateSeance) - new Date(a.dateSeance)
+      })
+    } else if (typeTri === 'dateCreation') {
+      historiqueTrie.sort((a, b) => new Date(b.dateCreation) - new Date(a.dateCreation))
+    } else if (typeTri === 'manuel' && ordreManuel.length > 0) {
+      // Trier selon l'ordre manuel
+      historiqueTrie.sort((a, b) => {
+        const indexA = ordreManuel.indexOf(a.id)
+        const indexB = ordreManuel.indexOf(b.id)
+        // Si un ID n'est pas dans ordreManuel, le mettre à la fin
+        if (indexA === -1 && indexB === -1) return 0
+        if (indexA === -1) return 1
+        if (indexB === -1) return -1
+        return indexA - indexB
+      })
+    }
+
+    return historiqueTrie
+  }
+
+  // Changer le type de tri
+  const changerTypeTri = (nouveauType) => {
+    // Si on passe du manuel à un autre tri, sauvegarder l'ordre actuel
+    if (typeTri === 'manuel' && nouveauType !== 'manuel') {
+      const ordreActuel = obtenirHistoriqueTrie().map(s => s.id)
+      setOrdreManuel(ordreActuel)
+      localStorage.setItem('plan-marathon-ordreManuel', JSON.stringify(ordreActuel))
+    }
+
+    // Si on passe à manuel et qu'il n'y a pas d'ordre sauvegardé, utiliser l'ordre actuel
+    if (nouveauType === 'manuel' && ordreManuel.length === 0) {
+      const ordreActuel = obtenirHistoriqueTrie().map(s => s.id)
+      setOrdreManuel(ordreActuel)
+      localStorage.setItem('plan-marathon-ordreManuel', JSON.stringify(ordreActuel))
+    }
+
+    setTypeTri(nouveauType)
+    localStorage.setItem('plan-marathon-typeTri', nouveauType)
+  }
+
+  // Déplacer une séance vers le haut en mode manuel
+  const deplacerSeanceHaut = (index) => {
+    if (index === 0) return
+    const historiqueTrie = obtenirHistoriqueTrie()
+    const nouvelOrdre = historiqueTrie.map(s => s.id)
+
+    // Échanger les positions
+    const temp = nouvelOrdre[index]
+    nouvelOrdre[index] = nouvelOrdre[index - 1]
+    nouvelOrdre[index - 1] = temp
+
+    setOrdreManuel(nouvelOrdre)
+    localStorage.setItem('plan-marathon-ordreManuel', JSON.stringify(nouvelOrdre))
+  }
+
+  // Déplacer une séance vers le bas en mode manuel
+  const deplacerSeanceBas = (index) => {
+    const historiqueTrie = obtenirHistoriqueTrie()
+    if (index === historiqueTrie.length - 1) return
+
+    const nouvelOrdre = historiqueTrie.map(s => s.id)
+
+    // Échanger les positions
+    const temp = nouvelOrdre[index]
+    nouvelOrdre[index] = nouvelOrdre[index + 1]
+    nouvelOrdre[index + 1] = temp
+
+    setOrdreManuel(nouvelOrdre)
+    localStorage.setItem('plan-marathon-ordreManuel', JSON.stringify(nouvelOrdre))
   }
 
   // Ajouter un nouveau bloc
@@ -1125,8 +1243,23 @@ function App() {
 
       {historique.length > 0 && (
         <div className="historique-section">
-          <h2>Historique des séances</h2>
-          {historique.map((seance) => (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 style={{ margin: 0 }}>Historique des séances</h2>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel id="tri-label">Trier par</InputLabel>
+              <Select
+                labelId="tri-label"
+                value={typeTri}
+                label="Trier par"
+                onChange={(e) => changerTypeTri(e.target.value)}
+              >
+                <MenuItem value="dateCreation">Date de création</MenuItem>
+                <MenuItem value="dateSeance">Date de séance</MenuItem>
+                <MenuItem value="manuel">Ordre manuel</MenuItem>
+              </Select>
+            </FormControl>
+          </div>
+          {obtenirHistoriqueTrie().map((seance, index) => (
             <div key={seance.id} className="historique-item">
               <div className="historique-info">
                 <strong>{seance.nom}</strong>
@@ -1138,9 +1271,61 @@ function App() {
                 <span>{seance.blocs.length} bloc(s)</span>
               </div>
               <div className="historique-actions">
-                <button className="btn-secondary" onClick={() => chargerSeance(seance)}>Charger</button>
-                <button className="btn-primary" onClick={() => modifierSeance(seance)}>Modifier</button>
-                <button className="btn-danger" onClick={() => supprimerSeance(seance.id)}>Supprimer</button>
+                {typeTri === 'manuel' && (
+                  <>
+                    <Tooltip title="Déplacer vers le haut">
+                      <span>
+                        <IconButton
+                          onClick={() => deplacerSeanceHaut(index)}
+                          disabled={index === 0}
+                          size="small"
+                          color="primary"
+                        >
+                          <ArrowUpwardIcon />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="Déplacer vers le bas">
+                      <span>
+                        <IconButton
+                          onClick={() => deplacerSeanceBas(index)}
+                          disabled={index === obtenirHistoriqueTrie().length - 1}
+                          size="small"
+                          color="primary"
+                        >
+                          <ArrowDownwardIcon />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </>
+                )}
+                <Tooltip title="Dupliquer">
+                  <IconButton
+                    onClick={() => dupliquerSeanceHistorique(seance)}
+                    size="small"
+                    color="default"
+                  >
+                    <ContentCopyIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Modifier">
+                  <IconButton
+                    onClick={() => modifierSeance(seance)}
+                    size="small"
+                    color="primary"
+                  >
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Supprimer">
+                  <IconButton
+                    onClick={() => supprimerSeance(seance.id)}
+                    size="small"
+                    color="error"
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
               </div>
             </div>
           ))}
