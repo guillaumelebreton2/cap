@@ -9,11 +9,14 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import Checkbox from '@mui/material/Checkbox'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import FileDownloadIcon from '@mui/icons-material/FileDownload'
+import FileUploadIcon from '@mui/icons-material/FileUpload'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -31,6 +34,7 @@ function App() {
   const [seanceEnCoursEdition, setSeanceEnCoursEdition] = useState(null)
   const [typeTri, setTypeTri] = useState('dateCreation') // 'dateSeance', 'dateCreation', 'manuel'
   const [ordreManuel, setOrdreManuel] = useState([]) // Tableau d'IDs pour l'ordre manuel
+  const [seancesSelectionnees, setSeancesSelectionnees] = useState([]) // IDs des séances sélectionnées
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
@@ -209,6 +213,132 @@ function App() {
 
     setOrdreManuel(nouvelOrdre)
     localStorage.setItem('plan-marathon-ordreManuel', JSON.stringify(nouvelOrdre))
+  }
+
+  // Gérer la sélection d'une séance
+  const toggleSelectionSeance = (id) => {
+    if (seancesSelectionnees.includes(id)) {
+      setSeancesSelectionnees(seancesSelectionnees.filter(seanceId => seanceId !== id))
+    } else {
+      setSeancesSelectionnees([...seancesSelectionnees, id])
+    }
+  }
+
+  // Tout sélectionner / Tout désélectionner
+  const toggleToutSelectionner = () => {
+    if (seancesSelectionnees.length === historique.length) {
+      setSeancesSelectionnees([])
+    } else {
+      setSeancesSelectionnees(historique.map(s => s.id))
+    }
+  }
+
+  // Exporter des séances en JSON
+  const exporterSeances = (seances) => {
+    const dataStr = JSON.stringify(seances, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    const date = new Date().toISOString().split('T')[0]
+    link.download = `seances-marathon-${date}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Exporter tout l'historique
+  const exporterTout = () => {
+    exporterSeances(historique)
+    alert(`${historique.length} séance(s) exportée(s)`)
+  }
+
+  // Exporter la sélection
+  const exporterSelection = () => {
+    const seancesAExporter = historique.filter(s => seancesSelectionnees.includes(s.id))
+    exporterSeances(seancesAExporter)
+    alert(`${seancesAExporter.length} séance(s) exportée(s)`)
+    setSeancesSelectionnees([])
+  }
+
+  // Exporter une seule séance
+  const exporterSeanceIndividuelle = (seance) => {
+    exporterSeances([seance])
+    alert('Séance exportée')
+  }
+
+  // Importer des séances
+  const importerSeances = (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const seancesImportees = JSON.parse(e.target.result)
+
+        // Vérifier que c'est un tableau
+        if (!Array.isArray(seancesImportees)) {
+          alert('Format de fichier invalide')
+          return
+        }
+
+        // Détecter les doublons
+        const doublons = seancesImportees.filter(seanceImportee =>
+          historique.some(s => s.id === seanceImportee.id)
+        )
+
+        let seancesAjouter = []
+
+        if (doublons.length > 0) {
+          const reponse = confirm(
+            `${doublons.length} séance(s) existe(nt) déjà.\n\n` +
+            `OK = Remplacer les doublons\n` +
+            `Annuler = Créer des copies avec de nouveaux IDs`
+          )
+
+          if (reponse) {
+            // Remplacer les doublons
+            let nouvelHistorique = [...historique]
+            seancesImportees.forEach(seanceImportee => {
+              const index = nouvelHistorique.findIndex(s => s.id === seanceImportee.id)
+              if (index !== -1) {
+                nouvelHistorique[index] = seanceImportee
+              } else {
+                nouvelHistorique.push(seanceImportee)
+              }
+            })
+            setHistorique(nouvelHistorique)
+            localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+            alert(`${seancesImportees.length} séance(s) importée(s) (${doublons.length} remplacée(s))`)
+          } else {
+            // Créer des copies avec de nouveaux IDs
+            seancesAjouter = seancesImportees.map(seance => ({
+              ...seance,
+              id: Date.now() + Math.random(),
+              nom: historique.some(s => s.id === seance.id) ? `Copie de ${seance.nom}` : seance.nom,
+              dateCreation: new Date().toISOString()
+            }))
+            const nouvelHistorique = [...historique, ...seancesAjouter]
+            setHistorique(nouvelHistorique)
+            localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+            alert(`${seancesAjouter.length} séance(s) importée(s) (copies créées)`)
+          }
+        } else {
+          // Pas de doublons, ajouter directement
+          const nouvelHistorique = [...historique, ...seancesImportees]
+          setHistorique(nouvelHistorique)
+          localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+          alert(`${seancesImportees.length} séance(s) importée(s)`)
+        }
+
+        // Réinitialiser l'input file
+        event.target.value = ''
+      } catch (error) {
+        alert('Erreur lors de l\'import du fichier')
+        console.error(error)
+      }
+    }
+    reader.readAsText(file)
   }
 
   // Ajouter un nouveau bloc
@@ -1241,10 +1371,10 @@ function App() {
         </div>
       )}
 
-      {historique.length > 0 && (
-        <div className="historique-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 style={{ margin: 0 }}>Historique des séances</h2>
+      <div className="historique-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ margin: 0 }}>Historique des séances</h2>
+          {historique.length > 0 && (
             <FormControl size="small" sx={{ minWidth: 180 }}>
               <InputLabel id="tri-label">Trier par</InputLabel>
               <Select
@@ -1258,17 +1388,61 @@ function App() {
                 <MenuItem value="manuel">Ordre manuel</MenuItem>
               </Select>
             </FormControl>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {historique.length > 0 && (
+            <>
+              <button className="btn-secondary" onClick={toggleToutSelectionner}>
+                {seancesSelectionnees.length === historique.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+              </button>
+              <button className="btn-primary" onClick={exporterTout}>
+                Exporter tout
+              </button>
+              {seancesSelectionnees.length > 0 && (
+                <button className="btn-primary" onClick={exporterSelection}>
+                  Exporter la sélection ({seancesSelectionnees.length})
+                </button>
+              )}
+            </>
+          )}
+          <label htmlFor="import-file" style={{ margin: 0 }}>
+            <input
+              id="import-file"
+              type="file"
+              accept=".json"
+              onChange={importerSeances}
+              style={{ display: 'none' }}
+            />
+            <button className="btn-success" onClick={() => document.getElementById('import-file').click()}>
+              Importer
+            </button>
+          </label>
+        </div>
+
+        {historique.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2rem', color: '#6c757d', fontStyle: 'italic' }}>
+            Aucune séance enregistrée. Créez votre première séance ou importez des séances existantes.
           </div>
-          {obtenirHistoriqueTrie().map((seance, index) => (
+        ) : (
+          obtenirHistoriqueTrie().map((seance, index) => (
             <div key={seance.id} className="historique-item">
-              <div className="historique-info">
-                <strong>{seance.nom}</strong>
-                {seance.dateSeance && (
-                  <span className="date-seance">📅 {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}</span>
-                )}
-                <span className="date-creation">Créée le {new Date(seance.dateCreation).toLocaleDateString('fr-FR')}</span>
-                <span>VMA: {seance.vma} km/h</span>
-                <span>{seance.blocs.length} bloc(s)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                <Checkbox
+                  checked={seancesSelectionnees.includes(seance.id)}
+                  onChange={() => toggleSelectionSeance(seance.id)}
+                  size="small"
+                />
+                <div className="historique-info">
+                  <strong>{seance.nom}</strong>
+                  {seance.dateSeance && (
+                    <span className="date-seance">📅 {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}</span>
+                  )}
+                  <span className="date-creation">Créée le {new Date(seance.dateCreation).toLocaleDateString('fr-FR')}</span>
+                  <span>VMA: {seance.vma} km/h</span>
+                  <span>{seance.blocs.length} bloc(s)</span>
+                </div>
               </div>
               <div className="historique-actions">
                 {typeTri === 'manuel' && (
@@ -1299,6 +1473,15 @@ function App() {
                     </Tooltip>
                   </>
                 )}
+                <Tooltip title="Exporter cette séance">
+                  <IconButton
+                    onClick={() => exporterSeanceIndividuelle(seance)}
+                    size="small"
+                    color="default"
+                  >
+                    <FileDownloadIcon />
+                  </IconButton>
+                </Tooltip>
                 <Tooltip title="Dupliquer">
                   <IconButton
                     onClick={() => dupliquerSeanceHistorique(seance)}
@@ -1328,9 +1511,9 @@ function App() {
                 </Tooltip>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
       </div>
     </LocalizationProvider>
   )
