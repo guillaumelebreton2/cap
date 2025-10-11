@@ -343,18 +343,59 @@ function App() {
 
   // Calculer la durée totale d'une séance (en secondes)
   const calculerDureeTotaleSeance = (seance) => {
-    let dureeSecondes = 0
+    let dureeMin = 0
+    let dureeMax = 0
+    let haPlage = false
+
     seance.blocs.forEach(bloc => {
       const repetitionsBloc = parseInt(bloc.repetitions) || 1
       bloc.series.forEach(serie => {
         const repetitionsSerie = parseInt(serie.repetitions) || 1
-        const tempsSecondes = parserTemps(serie.temps)
-        if (tempsSecondes) {
-          dureeSecondes += tempsSecondes * repetitionsSerie * repetitionsBloc
+
+        // Durée de la série
+        if (serie.typePlage === 'plage') {
+          haPlage = true
+          const tempsMinSecondes = parserTemps(serie.tempsMin)
+          const tempsMaxSecondes = parserTemps(serie.tempsMax)
+          if (tempsMinSecondes) {
+            dureeMin += tempsMinSecondes * repetitionsSerie * repetitionsBloc
+          }
+          if (tempsMaxSecondes) {
+            dureeMax += tempsMaxSecondes * repetitionsSerie * repetitionsBloc
+          }
+        } else {
+          const tempsSecondes = parserTemps(serie.temps)
+          if (tempsSecondes) {
+            dureeMin += tempsSecondes * repetitionsSerie * repetitionsBloc
+            dureeMax += tempsSecondes * repetitionsSerie * repetitionsBloc
+          }
+        }
+
+        // Durée de la récupération attachée
+        if (serie.recuperation) {
+          const recup = serie.recuperation
+          if (recup.typePlage === 'plage') {
+            haPlage = true
+            const tempsMinSecondes = parserTemps(recup.tempsMin)
+            const tempsMaxSecondes = parserTemps(recup.tempsMax)
+            if (tempsMinSecondes) {
+              dureeMin += tempsMinSecondes * repetitionsSerie * repetitionsBloc
+            }
+            if (tempsMaxSecondes) {
+              dureeMax += tempsMaxSecondes * repetitionsSerie * repetitionsBloc
+            }
+          } else {
+            const tempsSecondes = parserTemps(recup.temps)
+            if (tempsSecondes) {
+              dureeMin += tempsSecondes * repetitionsSerie * repetitionsBloc
+              dureeMax += tempsSecondes * repetitionsSerie * repetitionsBloc
+            }
+          }
         }
       })
     })
-    return dureeSecondes
+
+    return haPlage ? { min: dureeMin, max: dureeMax, isRange: true } : dureeMin
   }
 
   // Exporter des séances en JSON
@@ -2613,7 +2654,19 @@ END:VEVENT
               return (
                 <div key={indexBloc} className="summary-bloc">
                   <div className="summary-bloc-title">
-                    Bloc {indexBloc + 1} - {getBlocTypeLabel(blocType)} {blocType === 'course' && repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                    {(() => {
+                      // Calculer le numéro de course
+                      const numeroCourse = blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
+
+                      if (blocType === 'echauffement') {
+                        return 'Échauffement'
+                      } else if (blocType === 'course') {
+                        return `Course ${numeroCourse}${repetitionsBloc > 1 ? ` (×${repetitionsBloc})` : ''}`
+                      } else if (blocType === 'recuperation') {
+                        return 'Récupération'
+                      }
+                      return `Bloc ${indexBloc + 1}`
+                    })()}
                   </div>
                   <div className="summary-series-list">
                     {bloc.series.map((serie, indexSerie) => {
@@ -2880,9 +2933,21 @@ END:VEVENT
                         return `${(distanceResult / 1000).toFixed(2)} km`
                       })()}
                     </span>
-                    {calculerDureeTotaleSeance(seance) > 0 && (
-                      <span>{formaterTempsLisible(formaterTemps(calculerDureeTotaleSeance(seance)))}</span>
-                    )}
+                    {(() => {
+                      const dureeResult = calculerDureeTotaleSeance(seance)
+                      if (dureeResult.isRange) {
+                        if (dureeResult.min > 0 || dureeResult.max > 0) {
+                          return (
+                            <span>
+                              {formaterTempsLisible(formaterTemps(dureeResult.min))} - {formaterTempsLisible(formaterTemps(dureeResult.max))}
+                            </span>
+                          )
+                        }
+                      } else if (dureeResult > 0) {
+                        return <span>{formaterTempsLisible(formaterTemps(dureeResult))}</span>
+                      }
+                      return null
+                    })()}
                   </div>
 
                   {seancesDetailsOuvertes.includes(seance.id) && (
@@ -2905,7 +2970,19 @@ END:VEVENT
                           return (
                             <div key={indexBloc} style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid #dee2e6' }}>
                               <div style={{ fontWeight: 600, color: '#495057', marginBottom: '0.5rem' }}>
-                                Bloc {indexBloc + 1} - {getBlocTypeLabel(blocType)} {blocType === 'course' && repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                                {(() => {
+                                  // Calculer le numéro de course
+                                  const numeroCourse = seance.blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
+
+                                  if (blocType === 'echauffement') {
+                                    return 'Échauffement'
+                                  } else if (blocType === 'course') {
+                                    return `Course ${numeroCourse}${repetitionsBloc > 1 ? ` (×${repetitionsBloc})` : ''}`
+                                  } else if (blocType === 'recuperation') {
+                                    return 'Récupération'
+                                  }
+                                  return `Bloc ${indexBloc + 1}`
+                                })()}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                 {bloc.series.map((serie, indexSerie) => {
