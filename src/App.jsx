@@ -18,6 +18,7 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import FileUploadIcon from '@mui/icons-material/FileUpload'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -31,11 +32,13 @@ function App() {
   const [historique, setHistorique] = useState([])
   const [nomSeance, setNomSeance] = useState('')
   const [dateSeance, setDateSeance] = useState('')
+  const [commentaireSeance, setCommentaireSeance] = useState('')
   const [typingTimeouts, setTypingTimeouts] = useState({})
   const [seanceEnCoursEdition, setSeanceEnCoursEdition] = useState(null)
   const [typeTri, setTypeTri] = useState('dateCreation') // 'dateSeance', 'dateCreation', 'manuel'
   const [ordreManuel, setOrdreManuel] = useState([]) // Tableau d'IDs pour l'ordre manuel
   const [seancesSelectionnees, setSeancesSelectionnees] = useState([]) // IDs des séances sélectionnées
+  const [seancesDetailsOuvertes, setSeancesDetailsOuvertes] = useState([]) // IDs des séances avec détails affichés
   const [allureMarathon, setAllureMarathon] = useState('') // Allure marathon en min/km (format "5:30")
   const [tempsMarathon, setTempsMarathon] = useState('') // Temps marathon en h:mm:ss
 
@@ -117,6 +120,7 @@ function App() {
     setBlocs(JSON.parse(JSON.stringify(seance.blocs))) // Deep copy pour éviter mutations
     setNomSeance(seance.nom || '')
     setDateSeance(seance.dateSeance || '')
+    setCommentaireSeance(seance.commentaire || '')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -130,7 +134,7 @@ function App() {
 
     const nouvelHistorique = historique.map(s =>
       s.id === seanceEnCoursEdition.id
-        ? { ...s, nom: nomSeance, vma, blocs, dateSeance }
+        ? { ...s, nom: nomSeance, vma, blocs, dateSeance, commentaire: commentaireSeance }
         : s
     )
     setHistorique(nouvelHistorique)
@@ -142,6 +146,7 @@ function App() {
     setVma('')
     setBlocs([])
     setDateSeance('')
+    setCommentaireSeance('')
     alert('Séance mise à jour !')
   }
 
@@ -152,6 +157,7 @@ function App() {
     setVma('')
     setBlocs([])
     setDateSeance('')
+    setCommentaireSeance('')
   }
 
   // Obtenir l'historique trié
@@ -251,6 +257,43 @@ function App() {
     } else {
       setSeancesSelectionnees(historique.map(s => s.id))
     }
+  }
+
+  // Toggle l'affichage des détails d'une séance
+  const toggleDetailsSeance = (id) => {
+    if (seancesDetailsOuvertes.includes(id)) {
+      setSeancesDetailsOuvertes(seancesDetailsOuvertes.filter(seanceId => seanceId !== id))
+    } else {
+      setSeancesDetailsOuvertes([...seancesDetailsOuvertes, id])
+    }
+  }
+
+  // Calculer la distance totale d'une séance
+  const calculerDistanceTotaleSeance = (seance) => {
+    return seance.blocs.reduce((total, bloc) => {
+      const repetitionsBloc = parseInt(bloc.repetitions) || 1
+      return total + bloc.series.reduce((sousTotal, serie) => {
+        const repetitionsSerie = parseInt(serie.repetitions) || 1
+        const distance = parseFloat(serie.distance) || 0
+        return sousTotal + (distance * repetitionsSerie * repetitionsBloc)
+      }, 0)
+    }, 0)
+  }
+
+  // Calculer la durée totale d'une séance (en secondes)
+  const calculerDureeTotaleSeance = (seance) => {
+    let dureeSecondes = 0
+    seance.blocs.forEach(bloc => {
+      const repetitionsBloc = parseInt(bloc.repetitions) || 1
+      bloc.series.forEach(serie => {
+        const repetitionsSerie = parseInt(serie.repetitions) || 1
+        const tempsSecondes = parserTemps(serie.temps)
+        if (tempsSecondes) {
+          dureeSecondes += tempsSecondes * repetitionsSerie * repetitionsBloc
+        }
+      })
+    })
+    return dureeSecondes
   }
 
   // Exporter des séances en JSON
@@ -495,6 +538,165 @@ function App() {
     setHistorique(nouvelHistorique)
     localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
     alert(`${historique.length} séance(s) actualisée(s) !`)
+  }
+
+  // Générer le contenu .ics pour des séances
+  const genererICS = (seances) => {
+    let icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Plan Marathon//Calculateur d'allures//FR
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Séances Marathon
+X-WR-TIMEZONE:Europe/Paris
+`
+
+    seances.forEach(seance => {
+      // Déterminer la date de l'événement
+      const dateSeance = seance.dateSeance ? new Date(seance.dateSeance) : new Date(seance.dateCreation)
+
+      // Calculer la durée totale de la séance
+      let dureeSecondes = 0
+      seance.blocs.forEach(bloc => {
+        const repetitionsBloc = parseInt(bloc.repetitions) || 1
+        bloc.series.forEach(serie => {
+          const repetitionsSerie = parseInt(serie.repetitions) || 1
+          const tempsSecondes = parserTemps(serie.temps)
+          if (tempsSecondes) {
+            dureeSecondes += tempsSecondes * repetitionsSerie * repetitionsBloc
+          }
+        })
+      })
+
+      // Si pas de durée calculée, mettre 1h par défaut
+      if (dureeSecondes === 0) {
+        dureeSecondes = 3600
+      }
+
+      // Heure de début : 8h00 par défaut
+      const heureDebut = new Date(dateSeance)
+      heureDebut.setHours(8, 0, 0, 0)
+
+      // Heure de fin
+      const heureFin = new Date(heureDebut.getTime() + dureeSecondes * 1000)
+
+      // Formater les dates au format iCalendar (YYYYMMDDTHHMMSS)
+      const formatDateICS = (date) => {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hours = String(date.getHours()).padStart(2, '0')
+        const minutes = String(date.getMinutes()).padStart(2, '0')
+        const seconds = String(date.getSeconds()).padStart(2, '0')
+        return `${year}${month}${day}T${hours}${minutes}${seconds}`
+      }
+
+      // Générer la description détaillée
+      let description = `VMA: ${seance.vma} km/h\\n`
+      if (seance.commentaire) {
+        description += `\\n${seance.commentaire}\\n`
+      }
+      description += `\\n`
+
+      seance.blocs.forEach((bloc, indexBloc) => {
+        const repetitionsBloc = parseInt(bloc.repetitions) || 1
+        description += `Bloc ${indexBloc + 1}`
+        if (repetitionsBloc > 1) {
+          description += ` (×${repetitionsBloc})`
+        }
+        description += `:\\n`
+
+        bloc.series.forEach((serie, indexSerie) => {
+          const repetitionsSerie = parseInt(serie.repetitions) || 1
+          const distance = parseFloat(serie.distance) || 0
+
+          description += `  - ${repetitionsSerie}× ${distance}m`
+
+          if (serie.typePlage === 'plage' && serie.allureMin && serie.allureMax) {
+            description += ` @ ${serie.allureMin}-${serie.allureMax}/km`
+            if (serie.pourcentageVMAMin && serie.pourcentageVMAMax) {
+              description += ` (${serie.pourcentageVMAMin}-${serie.pourcentageVMAMax}% VMA)`
+            }
+          } else if (serie.allure) {
+            description += ` @ ${serie.allure}/km`
+            if (serie.pourcentageVMA) {
+              description += ` (${serie.pourcentageVMA}% VMA)`
+            }
+          }
+
+          if (serie.typePlage === 'plage' && serie.tempsMin && serie.tempsMax) {
+            description += ` en ${formaterTempsLisible(serie.tempsMin)}-${formaterTempsLisible(serie.tempsMax)}`
+          } else if (serie.temps) {
+            description += ` en ${formaterTempsLisible(serie.temps)}`
+          }
+
+          description += `\\n`
+        })
+        description += `\\n`
+      })
+
+      // Calculer la distance totale
+      const distanceTotale = seance.blocs.reduce((total, bloc) => {
+        const repetitionsBloc = parseInt(bloc.repetitions) || 1
+        return total + bloc.series.reduce((sousTotal, serie) => {
+          const repetitionsSerie = parseInt(serie.repetitions) || 1
+          const distance = parseFloat(serie.distance) || 0
+          return sousTotal + (distance * repetitionsSerie * repetitionsBloc)
+        }, 0)
+      }, 0)
+
+      description += `Distance totale: ${(distanceTotale / 1000).toFixed(2)} km`
+
+      // Créer l'événement
+      icsContent += `BEGIN:VEVENT
+UID:${seance.id}@plan-marathon
+DTSTAMP:${formatDateICS(new Date())}
+DTSTART:${formatDateICS(heureDebut)}
+DTEND:${formatDateICS(heureFin)}
+SUMMARY:${seance.nom}
+DESCRIPTION:${description}
+CATEGORIES:Sport,Running,Marathon
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+`
+    })
+
+    icsContent += 'END:VCALENDAR'
+    return icsContent
+  }
+
+  // Télécharger le fichier .ics
+  const telechargerICS = (seances, nomFichier = 'seances-marathon') => {
+    const icsContent = genererICS(seances)
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const date = new Date().toISOString().split('T')[0]
+    link.download = `${nomFichier}-${date}.ics`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Exporter tout vers calendrier
+  const exporterToutVersCalendrier = () => {
+    telechargerICS(historique, 'toutes-seances-marathon')
+    alert(`${historique.length} séance(s) exportée(s) vers le calendrier`)
+  }
+
+  // Exporter la sélection vers calendrier
+  const exporterSelectionVersCalendrier = () => {
+    const seancesAExporter = historique.filter(s => seancesSelectionnees.includes(s.id))
+    telechargerICS(seancesAExporter, 'selection-seances-marathon')
+    alert(`${seancesAExporter.length} séance(s) exportée(s) vers le calendrier`)
+    setSeancesSelectionnees([])
+  }
+
+  // Exporter une seule séance vers calendrier
+  const exporterSeanceVersCalendrier = (seance) => {
+    telechargerICS([seance], `seance-${seance.nom.toLowerCase().replace(/\s+/g, '-')}`)
+    alert('Séance exportée vers le calendrier')
   }
 
   // Ajouter un nouveau bloc
@@ -1265,13 +1467,14 @@ function App() {
       mettreAJourSeance()
     } else {
       // Création d'une nouvelle séance
-      sauvegarderHistorique({ nom: nomSeance, vma, blocs, dateSeance })
+      sauvegarderHistorique({ nom: nomSeance, vma, blocs, dateSeance, commentaire: commentaireSeance })
       alert('Séance sauvegardée !')
       // Réinitialiser le formulaire après sauvegarde
       setNomSeance('')
       setVma('')
       setBlocs([])
       setDateSeance('')
+      setCommentaireSeance('')
     }
   }
 
@@ -1339,33 +1542,44 @@ function App() {
           </Box>
         </div>
 
-        <div className="top-section">
+        <div className="top-section" style={{ flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', width: '100%' }}>
+            <TextField
+              label="Nom de la séance"
+              value={nomSeance}
+              onChange={(e) => setNomSeance(e.target.value)}
+              placeholder="Ex: Séance VMA"
+              size="small"
+              sx={{ flex: '1 1 auto', minWidth: '200px' }}
+            />
+            <DatePicker
+              label="Date de la séance"
+              value={dateSeance ? dayjs(dateSeance) : null}
+              onChange={(newValue) => setDateSeance(newValue ? newValue.format('YYYY-MM-DD') : '')}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  sx: { width: '180px' }
+                }
+              }}
+            />
+            <button className="btn-primary" onClick={ajouterBloc} style={{ width: '170px' }}>+ Ajouter un bloc</button>
+            {seanceEnCoursEdition && (
+              <button className="btn-secondary" onClick={annulerEdition}>Annuler</button>
+            )}
+            <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>
+              {seanceEnCoursEdition ? 'Mettre à jour' : 'Sauvegarder'}
+            </button>
+          </div>
           <TextField
-            label="Nom de la séance"
-            value={nomSeance}
-            onChange={(e) => setNomSeance(e.target.value)}
-            placeholder="Ex: Séance VMA"
+            label="Commentaire"
+            value={commentaireSeance}
+            onChange={(e) => setCommentaireSeance(e.target.value)}
             size="small"
             fullWidth
+            multiline
+            rows={2}
           />
-          <DatePicker
-            label="Date de la séance"
-            value={dateSeance ? dayjs(dateSeance) : null}
-            onChange={(newValue) => setDateSeance(newValue ? newValue.format('YYYY-MM-DD') : '')}
-            slotProps={{
-              textField: {
-                size: 'small',
-                sx: { width: '180px' }
-              }
-            }}
-          />
-          <button className="btn-primary" onClick={ajouterBloc} style={{ width: '170px' }}>+ Ajouter un bloc</button>
-          {seanceEnCoursEdition && (
-            <button className="btn-secondary" onClick={annulerEdition}>Annuler</button>
-          )}
-          <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>
-            {seanceEnCoursEdition ? 'Mettre à jour' : 'Sauvegarder'}
-          </button>
         </div>
 
       {blocs.map((bloc, indexBloc) => (
@@ -1833,10 +2047,24 @@ function App() {
               <button className="btn-primary" onClick={exporterTout}>
                 Exporter tout
               </button>
-              {seancesSelectionnees.length > 0 && (
-                <button className="btn-primary" onClick={exporterSelection}>
-                  Exporter la sélection ({seancesSelectionnees.length})
+              <Tooltip title="Exporter toutes les séances vers Google Calendar (fichier .ics)">
+                <button className="btn-primary" onClick={exporterToutVersCalendrier} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <CalendarMonthIcon sx={{ fontSize: '1rem' }} />
+                  Calendrier
                 </button>
+              </Tooltip>
+              {seancesSelectionnees.length > 0 && (
+                <>
+                  <button className="btn-primary" onClick={exporterSelection}>
+                    Exporter la sélection ({seancesSelectionnees.length})
+                  </button>
+                  <Tooltip title="Exporter la sélection vers Google Calendar (fichier .ics)">
+                    <button className="btn-primary" onClick={exporterSelectionVersCalendrier} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <CalendarMonthIcon sx={{ fontSize: '1rem' }} />
+                      Calendrier ({seancesSelectionnees.length})
+                    </button>
+                  </Tooltip>
+                </>
               )}
             </>
           )}
@@ -1885,14 +2113,104 @@ function App() {
                   onChange={() => toggleSelectionSeance(seance.id)}
                   size="small"
                 />
-                <div className="historique-info">
-                  <strong>{seance.nom}</strong>
-                  {seance.dateSeance && (
-                    <span className="date-seance">📅 {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                  <div className="historique-info">
+                    <strong>{seance.nom}</strong>
+                    {seance.dateSeance && (
+                      <span className="date-seance">📅 {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}</span>
+                    )}
+                    <span>{seance.blocs.length} bloc(s)</span>
+                    <span>{(calculerDistanceTotaleSeance(seance) / 1000).toFixed(2)} km</span>
+                    {calculerDureeTotaleSeance(seance) > 0 && (
+                      <span>{formaterTempsLisible(formaterTemps(calculerDureeTotaleSeance(seance)))}</span>
+                    )}
+                  </div>
+
+                  {seancesDetailsOuvertes.includes(seance.id) && (
+                    <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                      <div style={{ marginBottom: '0.75rem', color: '#6c757d' }}>
+                        <span>Créée le {new Date(seance.dateCreation).toLocaleDateString('fr-FR')}</span>
+                      </div>
+
+                      {seance.commentaire && (
+                        <div style={{ marginBottom: '1rem', fontStyle: 'italic', color: '#495057', background: 'white', padding: '0.75rem', borderRadius: '4px', borderLeft: '3px solid #007bff' }}>
+                          💬 {seance.commentaire}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {seance.blocs.map((bloc, indexBloc) => {
+                          const repetitionsBloc = parseInt(bloc.repetitions) || 1
+                          return (
+                            <div key={indexBloc} style={{ background: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid #dee2e6' }}>
+                              <div style={{ fontWeight: 600, color: '#495057', marginBottom: '0.5rem' }}>
+                                Bloc {indexBloc + 1} {repetitionsBloc > 1 && `(×${repetitionsBloc})`}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                {bloc.series.map((serie, indexSerie) => {
+                                  const repetitionsSerie = parseInt(serie.repetitions) || 1
+                                  const distance = parseFloat(serie.distance) || 0
+                                  const distanceTotale = distance * repetitionsSerie * repetitionsBloc
+
+                                  if (serie.typePlage === 'plage') {
+                                    const distanceMin = parseFloat(serie.distanceMin || serie.distance) || 0
+                                    const distanceMax = parseFloat(serie.distanceMax || serie.distance) || 0
+
+                                    return (
+                                      <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
+                                        • {repetitionsSerie}× {serie.distanceMin && serie.distanceMax ? `${distanceMin}-${distanceMax}m` : `${distance}m`}
+                                        {serie.allureMin && serie.allureMax && ` @ ${serie.allureMin}-${serie.allureMax}/km`}
+                                        {serie.pourcentageVMAMin && serie.pourcentageVMAMax && ` (${serie.pourcentageVMAMin}-${serie.pourcentageVMAMax}% VMA)`}
+                                        {serie.tempsMin && serie.tempsMax && ` en ${formaterTempsLisible(serie.tempsMin)}-${formaterTempsLisible(serie.tempsMax)}`}
+                                        <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
+                                          = {(distanceTotale / 1000).toFixed(2)}km
+                                        </span>
+                                      </div>
+                                    )
+                                  }
+
+                                  return (
+                                    <div key={indexSerie} style={{ paddingLeft: '1rem', color: '#495057' }}>
+                                      • {repetitionsSerie}× {distance}m
+                                      {serie.allure && ` @ ${serie.allure}/km`}
+                                      {serie.pourcentageVMA && ` (${serie.pourcentageVMA}% VMA)`}
+                                      {serie.temps && ` en ${formaterTempsLisible(serie.temps)}`}
+                                      <span style={{ color: '#6610f2', fontWeight: 500, marginLeft: '0.5rem' }}>
+                                        = {(distanceTotale / 1000).toFixed(2)}km
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div style={{ marginTop: '0.75rem', fontWeight: 600, color: '#6610f2', textAlign: 'right' }}>
+                        Distance totale: {(calculerDistanceTotaleSeance(seance) / 1000).toFixed(2)} km
+                      </div>
+                    </div>
                   )}
-                  <span className="date-creation">Créée le {new Date(seance.dateCreation).toLocaleDateString('fr-FR')}</span>
-                  <span>VMA: {seance.vma} km/h</span>
-                  <span>{seance.blocs.length} bloc(s)</span>
+
+                  <button
+                    onClick={() => toggleDetailsSeance(seance.id)}
+                    style={{
+                      alignSelf: 'flex-start',
+                      background: 'transparent',
+                      border: '1px solid #007bff',
+                      color: '#007bff',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '4px',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}
+                  >
+                    {seancesDetailsOuvertes.includes(seance.id) ? '👁️ Masquer les détails ▲' : '👁️ Voir les détails ▼'}
+                  </button>
                 </div>
               </div>
               <div className="historique-actions">
@@ -1935,13 +2253,22 @@ function App() {
                     </IconButton>
                   </Tooltip>
                 )}
-                <Tooltip title="Exporter cette séance">
+                <Tooltip title="Exporter cette séance (JSON)">
                   <IconButton
                     onClick={() => exporterSeanceIndividuelle(seance)}
                     size="small"
                     color="default"
                   >
                     <FileDownloadIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Exporter vers Google Calendar (.ics)">
+                  <IconButton
+                    onClick={() => exporterSeanceVersCalendrier(seance)}
+                    size="small"
+                    color="primary"
+                  >
+                    <CalendarMonthIcon />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Dupliquer">
