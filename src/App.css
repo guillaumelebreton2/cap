@@ -4,6 +4,17 @@
   padding: 2rem;
 }
 
+/* Masquer les flèches des champs number (spinners) */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 h1 {
   text-align: center;
   color: #333;

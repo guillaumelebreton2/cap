@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react'
 import './App.css'
+import TextField from '@mui/material/TextField'
+import InputAdornment from '@mui/material/InputAdornment'
+import Box from '@mui/material/Box'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { TimePicker } from '@mui/x-date-pickers/TimePicker'
+import dayjs from 'dayjs'
+import 'dayjs/locale/fr'
 
 function App() {
   const [vma, setVma] = useState('')
@@ -7,6 +16,7 @@ function App() {
   const [historique, setHistorique] = useState([])
   const [nomSeance, setNomSeance] = useState('')
   const [dateSeance, setDateSeance] = useState('')
+  const [typingTimeouts, setTypingTimeouts] = useState({})
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
@@ -244,6 +254,79 @@ function App() {
     return ''
   }
 
+  // Extraire les minutes d'une allure formatée
+  const extraireMinutesAllure = (allureStr) => {
+    if (!allureStr) return ''
+    const parts = allureStr.split(':')
+    return parts[0] || ''
+  }
+
+  // Extraire les secondes d'une allure formatée
+  const extraireSecondesAllure = (allureStr) => {
+    if (!allureStr) return ''
+    const parts = allureStr.split(':')
+    return parts[1] || ''
+  }
+
+  // Formater automatiquement l'allure pendant la saisie (mm:ss)
+  const formatAllureInput = (value) => {
+    // Supprimer tout sauf les chiffres
+    const numbers = value.replace(/\D/g, '')
+
+    if (numbers.length === 0) return ''
+    if (numbers.length <= 2) return numbers
+
+    // Ajouter automatiquement le ":"
+    const minutes = numbers.slice(0, -2)
+    const secondes = numbers.slice(-2)
+    return `${minutes}:${secondes}`
+  }
+
+  // Formater automatiquement le temps pendant la saisie (h:mm:ss ou mm:ss)
+  const formatTempsInput = (value) => {
+    // Supprimer tout sauf les chiffres
+    const numbers = value.replace(/\D/g, '')
+
+    if (numbers.length === 0) return ''
+    if (numbers.length <= 2) return numbers
+    if (numbers.length <= 4) {
+      // Format mm:ss
+      const minutes = numbers.slice(0, -2)
+      const secondes = numbers.slice(-2)
+      return `${minutes}:${secondes}`
+    }
+
+    // Format h:mm:ss (plus de 4 chiffres)
+    const secondes = numbers.slice(-2)
+    const minutes = numbers.slice(-4, -2)
+    const heures = numbers.slice(0, -4)
+    return `${heures}:${minutes}:${secondes}`
+  }
+
+  // Mettre à jour l'allure avec minutes et secondes séparées
+  const updateAllure = (indexBloc, indexSerie, typeAllure, typeValeur, value) => {
+    const nouveauxBlocs = [...blocs]
+    const serie = { ...nouveauxBlocs[indexBloc].series[indexSerie] }
+
+    // Récupérer les valeurs actuelles
+    const allureActuelle = serie[typeAllure] || ''
+    const minutesActuelles = extraireMinutesAllure(allureActuelle)
+    const secondesActuelles = extraireSecondesAllure(allureActuelle)
+
+    // Mettre à jour la valeur appropriée
+    const minutes = typeValeur === 'minutes' ? value : minutesActuelles
+    const secondes = typeValeur === 'secondes' ? value : secondesActuelles
+
+    // Formater la nouvelle allure
+    let newAllure = ''
+    if (minutes || secondes) {
+      newAllure = `${minutes || '0'}:${(secondes || '0').padStart(2, '0')}`
+    }
+
+    // Utiliser updateSerie pour mettre à jour
+    updateSerie(indexBloc, indexSerie, typeAllure, newAllure)
+  }
+
   // Mettre à jour le temps d'une série avec heures, minutes et secondes séparées
   const updateTemps = (indexBloc, indexSerie, typeTemps, typeValeur, value) => {
     const nouveauxBlocs = [...blocs]
@@ -274,6 +357,33 @@ function App() {
 
     // Utiliser updateSerie pour mettre à jour
     updateSerie(indexBloc, indexSerie, typeTemps, newTemps)
+  }
+
+  // Mettre à jour une série avec debounce pour les calculs automatiques
+  const updateSerieWithDebounce = (indexBloc, indexSerie, field, value, immediate = false) => {
+    // Mettre à jour immédiatement la valeur dans l'UI
+    const nouveauxBlocs = [...blocs]
+    nouveauxBlocs[indexBloc].series[indexSerie][field] = value
+    setBlocs(nouveauxBlocs)
+
+    // Si immediate est true, calculer tout de suite
+    if (immediate) {
+      updateSerie(indexBloc, indexSerie, field, value)
+      return
+    }
+
+    // Sinon, attendre 500ms après la dernière frappe
+    const key = `${indexBloc}-${indexSerie}-${field}`
+
+    if (typingTimeouts[key]) {
+      clearTimeout(typingTimeouts[key])
+    }
+
+    const timeoutId = setTimeout(() => {
+      updateSerie(indexBloc, indexSerie, field, value)
+    }, 500)
+
+    setTypingTimeouts({ ...typingTimeouts, [key]: timeoutId })
   }
 
   // Mettre à jour une série
@@ -319,6 +429,15 @@ function App() {
         const temps = calculerTemps(serie.distance, allureMinutes)
         serie.temps = temps ? formaterTemps(temps) : ''
       }
+      // Si on a le temps mais pas la distance, calculer la distance
+      if (!serie.distance && serie.temps && allureMinutes) {
+        const tempsSecondes = parserTemps(serie.temps)
+        if (tempsSecondes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distance = Math.round(distanceKm * 1000) // convertir en mètres
+        }
+      }
     }
 
     // Si temps change
@@ -334,6 +453,15 @@ function App() {
             const pourcentageArrondi = Math.round(pourcentage / 5) * 5
             serie.pourcentageVMA = pourcentageArrondi
           }
+        }
+      }
+      // Si on a l'allure mais pas la distance, calculer la distance
+      if (!serie.distance && serie.allure && tempsSecondes) {
+        const allureMinutes = parserAllure(serie.allure)
+        if (allureMinutes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distance = Math.round(distanceKm * 1000) // convertir en mètres
         }
       }
     }
@@ -381,6 +509,15 @@ function App() {
         const temps = calculerTemps(distance, allureMinutes)
         serie.tempsMin = temps ? formaterTemps(temps) : ''
       }
+      // Si on a le temps mais pas la distance, calculer la distance
+      if (!serie.distanceMin && !serie.distance && serie.tempsMin && allureMinutes) {
+        const tempsSecondes = parserTemps(serie.tempsMin)
+        if (tempsSecondes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distanceMin = Math.round(distanceKm * 1000)
+        }
+      }
     }
 
     // Si allure max change
@@ -396,6 +533,15 @@ function App() {
       if (distance && allureMinutes) {
         const temps = calculerTemps(distance, allureMinutes)
         serie.tempsMax = temps ? formaterTemps(temps) : ''
+      }
+      // Si on a le temps mais pas la distance, calculer la distance
+      if (!serie.distanceMax && !serie.distance && serie.tempsMax && allureMinutes) {
+        const tempsSecondes = parserTemps(serie.tempsMax)
+        if (tempsSecondes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distanceMax = Math.round(distanceKm * 1000)
+        }
       }
     }
 
@@ -415,6 +561,15 @@ function App() {
           }
         }
       }
+      // Si on a l'allure mais pas la distance, calculer la distance
+      if (!serie.distanceMin && !serie.distance && serie.allureMin && tempsSecondes) {
+        const allureMinutes = parserAllure(serie.allureMin)
+        if (allureMinutes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distanceMin = Math.round(distanceKm * 1000)
+        }
+      }
     }
 
     // Si temps max change
@@ -431,6 +586,15 @@ function App() {
             const pourcentageArrondi = Math.round(pourcentage / 5) * 5
             serie.pourcentageVMAMax = pourcentageArrondi
           }
+        }
+      }
+      // Si on a l'allure mais pas la distance, calculer la distance
+      if (!serie.distanceMax && !serie.distance && serie.allureMax && tempsSecondes) {
+        const allureMinutes = parserAllure(serie.allureMax)
+        if (allureMinutes) {
+          const tempsMinutes = tempsSecondes / 60
+          const distanceKm = tempsMinutes / allureMinutes
+          serie.distanceMax = Math.round(distanceKm * 1000)
         }
       }
     }
@@ -557,56 +721,61 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <h1>Plan Marathon - Calculateur d'allures</h1>
+    <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="fr">
+      <div className="app">
+        <h1>Plan Marathon - Calculateur d'allures</h1>
 
-      <div className="top-section">
-        <div className="form-group">
-          <label>Nom de la séance</label>
-          <input
-            type="text"
+        <div className="top-section">
+          <TextField
+            label="Nom de la séance"
             value={nomSeance}
             onChange={(e) => setNomSeance(e.target.value)}
             placeholder="Ex: Séance VMA"
+            size="small"
+            fullWidth
           />
-        </div>
-        <div className="form-group">
-          <label>Date de la séance</label>
-          <input
-            type="date"
-            value={dateSeance}
-            onChange={(e) => setDateSeance(e.target.value)}
+          <DatePicker
+            label="Date de la séance"
+            value={dateSeance ? dayjs(dateSeance) : null}
+            onChange={(newValue) => setDateSeance(newValue ? newValue.format('YYYY-MM-DD') : '')}
+            slotProps={{
+              textField: {
+                size: 'small',
+                fullWidth: true
+              }
+            }}
           />
-        </div>
-        <div className="form-group">
-          <label>VMA (km/h)</label>
-          <input
+          <TextField
+            label="VMA"
             type="number"
-            step="0.1"
             value={vma}
             onChange={(e) => setVma(e.target.value)}
             placeholder="Ex: 16"
+            size="small"
+            fullWidth
+            inputProps={{ step: 0.1 }}
+            InputProps={{
+              endAdornment: <InputAdornment position="end">km/h</InputAdornment>
+            }}
           />
+          <button className="btn-primary" onClick={ajouterBloc}>+ Ajouter un bloc</button>
+          <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>Sauvegarder</button>
         </div>
-        <button className="btn-primary" onClick={ajouterBloc}>+ Ajouter un bloc</button>
-        <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>Sauvegarder</button>
-      </div>
 
       {blocs.map((bloc, indexBloc) => (
         <div key={indexBloc} className="bloc-container">
           <div className="bloc-header">
             <div className="bloc-title">
               <h2>Bloc {indexBloc + 1}</h2>
-              <div className="form-group-inline">
-                <label>Répétitions du bloc:</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={bloc.repetitions}
-                  onChange={(e) => updateRepetitionsBloc(indexBloc, e.target.value)}
-                  className="input-small"
-                />
-              </div>
+              <TextField
+                label="Répétitions du bloc"
+                type="number"
+                value={bloc.repetitions}
+                onChange={(e) => updateRepetitionsBloc(indexBloc, e.target.value)}
+                size="small"
+                inputProps={{ min: 1 }}
+                sx={{ width: '150px' }}
+              />
             </div>
             <div className="bloc-actions">
               <button className="btn-secondary" onClick={() => ajouterSerie(indexBloc)}>+ Série</button>
@@ -620,16 +789,15 @@ function App() {
               <div className="serie-header">
                 <div className="serie-title">
                   <span>Série {indexSerie + 1}</span>
-                  <div className="form-group-inline">
-                    <label>×</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={serie.repetitions}
-                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'repetitions', e.target.value)}
-                      className="input-tiny"
-                    />
-                  </div>
+                  <TextField
+                    label="Répétitions"
+                    type="number"
+                    value={serie.repetitions}
+                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'repetitions', e.target.value)}
+                    size="small"
+                    inputProps={{ min: 1 }}
+                    sx={{ width: '120px' }}
+                  />
                 </div>
                 <div className="serie-actions">
                   <button className="btn-small-secondary" onClick={() => dupliquerSerie(indexBloc, indexSerie)}>⎘</button>
@@ -662,264 +830,213 @@ function App() {
               </div>
 
               {serie.typePlage === 'plage' && (
-                <>
-                  <div className="form-group distance-field">
-                    <label>Distance principale (m) - optionnel</label>
-                    <input
-                      type="number"
-                      value={serie.distance}
-                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
-                      placeholder="400"
-                    />
-                    <span className="helper-text-info">Rempli automatiquement min et max si vides</span>
-                  </div>
-                  <div className="form-group distance-field">
-                    <label>Temps principal - optionnel</label>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        value={extraireHeures(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'heures', e.target.value)}
-                        placeholder="0"
-                        className="input-small"
-                        style={{ width: '45px' }}
-                      />
-                      <span>h</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={extraireMinutes(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'minutes', e.target.value)}
-                        placeholder="0"
-                        className="input-small"
-                        style={{ width: '45px' }}
-                      />
-                      <span>min</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={extraireSecondes(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'secondes', e.target.value)}
-                        placeholder="00"
-                        className="input-small"
-                        style={{ width: '45px' }}
-                      />
-                      <span>s</span>
-                    </div>
-                    <span className="helper-text-info">Rempli automatiquement min et max si vides</span>
-                  </div>
-                </>
+                <Box className="distance-field" sx={{ p: 2, mb: 2, bgcolor: 'white', borderRadius: 1 }}>
+                  <TextField
+                    label="Distance principale (optionnel)"
+                    type="number"
+                    value={serie.distance}
+                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
+                    placeholder="400"
+                    size="small"
+                    fullWidth
+                    helperText="Rempli automatiquement min et max si vides"
+                    sx={{ mb: 2 }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">m</InputAdornment>
+                    }}
+                  />
+                  <TextField
+                    label="Temps principal (optionnel)"
+                    value={serie.temps}
+                    onChange={(e) => {
+                      const formatted = formatTempsInput(e.target.value)
+                      updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
+                    }}
+                    placeholder="12345"
+                    size="small"
+                    fullWidth
+                    helperText="Rempli automatiquement min et max si vides"
+                  />
+                </Box>
               )}
 
               {serie.typePlage === 'fixe' ? (
-                <div className="serie-fields">
-                  <div className="form-group">
-                    <label>Distance (m)</label>
-                    <input
-                      type="number"
-                      value={serie.distance}
-                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
-                      placeholder="400"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>% VMA</label>
-                    <input
-                      type="number"
-                      step="5"
-                      value={serie.pourcentageVMA}
-                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMA', e.target.value)}
-                      placeholder="85"
-                      disabled={!vma}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Allure (min:sec/km)</label>
-                    <input
-                      type="text"
-                      value={serie.allure}
-                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'allure', e.target.value)}
-                      placeholder="5:30"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Temps</label>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        value={extraireHeures(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'heures', e.target.value)}
-                        placeholder="0"
-                        className="input-small"
-                        style={{ width: '50px' }}
-                      />
-                      <span>h</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={extraireMinutes(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'minutes', e.target.value)}
-                        placeholder="0"
-                        className="input-small"
-                        style={{ width: '50px' }}
-                      />
-                      <span>min</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={extraireSecondes(serie.temps)}
-                        onChange={(e) => updateTemps(indexBloc, indexSerie, 'temps', 'secondes', e.target.value)}
-                        placeholder="00"
-                        className="input-small"
-                        style={{ width: '50px' }}
-                      />
-                      <span>s</span>
-                    </div>
-                  </div>
-                </div>
+                <Box className="serie-fields" sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  <TextField
+                    label="Distance"
+                    type="number"
+                    value={serie.distance}
+                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
+                    placeholder="400"
+                    size="small"
+                    sx={{ width: '120px' }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">m</InputAdornment>
+                    }}
+                  />
+                  <TextField
+                    label="VMA"
+                    type="number"
+                    value={serie.pourcentageVMA}
+                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMA', e.target.value)}
+                    placeholder="85"
+                    size="small"
+                    disabled={!vma}
+                    inputProps={{ step: 5 }}
+                    sx={{ width: '100px' }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">%</InputAdornment>
+                    }}
+                  />
+                  <TextField
+                    label="Allure"
+                    value={serie.allure}
+                    onChange={(e) => {
+                      const formatted = formatAllureInput(e.target.value)
+                      updateSerieWithDebounce(indexBloc, indexSerie, 'allure', formatted)
+                    }}
+                    placeholder="530"
+                    size="small"
+                    sx={{ width: '140px' }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">min/km</InputAdornment>
+                    }}
+                  />
+                  <TextField
+                    label="Temps"
+                    value={serie.temps}
+                    onChange={(e) => {
+                      const formatted = formatTempsInput(e.target.value)
+                      updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
+                    }}
+                    placeholder="12345"
+                    size="small"
+                    sx={{ width: '150px' }}
+                  />
+                </Box>
               ) : (
-                <div className="serie-fields-plage">
-                  <div className="plage-group">
-                    <div className="plage-label">Min</div>
-                    <div className="form-group">
-                      <label>Distance (m)</label>
-                      <input
-                        type="number"
-                        value={serie.distanceMin}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMin', e.target.value)}
-                        placeholder="400"
-                      />
-                      <span className="helper-text-info">Optionnel si différent</span>
-                    </div>
-                    <div className="form-group">
-                      <label>% VMA</label>
-                      <input
-                        type="number"
-                        step="5"
-                        value={serie.pourcentageVMAMin}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMin', e.target.value)}
-                        placeholder="80"
-                        disabled={!vma}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Allure (min:sec/km)</label>
-                      <input
-                        type="text"
-                        value={serie.allureMin}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'allureMin', e.target.value)}
-                        placeholder="5:00"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Temps</label>
-                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          value={extraireHeures(serie.tempsMin)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMin', 'heures', e.target.value)}
-                          placeholder="0"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>h</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={extraireMinutes(serie.tempsMin)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMin', 'minutes', e.target.value)}
-                          placeholder="0"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>min</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={extraireSecondes(serie.tempsMin)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMin', 'secondes', e.target.value)}
-                          placeholder="00"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>s</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="plage-group">
-                    <div className="plage-label">Max</div>
-                    <div className="form-group">
-                      <label>Distance (m)</label>
-                      <input
-                        type="number"
-                        value={serie.distanceMax}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMax', e.target.value)}
-                        placeholder="450"
-                      />
-                      <span className="helper-text-info">Optionnel si différent</span>
-                    </div>
-                    <div className="form-group">
-                      <label>% VMA</label>
-                      <input
-                        type="number"
-                        step="5"
-                        value={serie.pourcentageVMAMax}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMax', e.target.value)}
-                        placeholder="90"
-                        disabled={!vma}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Allure (min:sec/km)</label>
-                      <input
-                        type="text"
-                        value={serie.allureMax}
-                        onChange={(e) => updateSerie(indexBloc, indexSerie, 'allureMax', e.target.value)}
-                        placeholder="5:30"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Temps</label>
-                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input
-                          type="number"
-                          min="0"
-                          value={extraireHeures(serie.tempsMax)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMax', 'heures', e.target.value)}
-                          placeholder="0"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>h</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={extraireMinutes(serie.tempsMax)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMax', 'minutes', e.target.value)}
-                          placeholder="0"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>min</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={extraireSecondes(serie.tempsMax)}
-                          onChange={(e) => updateTemps(indexBloc, indexSerie, 'tempsMax', 'secondes', e.target.value)}
-                          placeholder="00"
-                          className="input-tiny"
-                        />
-                        <span style={{ fontSize: '0.8rem' }}>s</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <Box className="serie-fields-plage" sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box className="plage-group" sx={{ bgcolor: 'white', p: 2, borderRadius: 1, border: '2px solid #dee2e6' }}>
+                    <Box className="plage-label" sx={{ fontWeight: 700, color: '#495057', mb: 1.5, fontSize: '1rem', textAlign: 'center', pb: 1, borderBottom: '2px solid #e9ecef' }}>
+                      Min
+                    </Box>
+                    <TextField
+                      label="Distance"
+                      type="number"
+                      value={serie.distanceMin}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMin', e.target.value)}
+                      placeholder="400"
+                      size="small"
+                      fullWidth
+                      helperText="Optionnel si différent"
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">m</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="VMA"
+                      type="number"
+                      value={serie.pourcentageVMAMin}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMin', e.target.value)}
+                      placeholder="80"
+                      size="small"
+                      fullWidth
+                      disabled={!vma}
+                      inputProps={{ step: 5 }}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="Allure"
+                      value={serie.allureMin}
+                      onChange={(e) => {
+                        const formatted = formatAllureInput(e.target.value)
+                        updateSerieWithDebounce(indexBloc, indexSerie, 'allureMin', formatted)
+                      }}
+                      placeholder="500"
+                      size="small"
+                      fullWidth
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">min/km</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="Temps"
+                      value={serie.tempsMin}
+                      onChange={(e) => {
+                        const formatted = formatTempsInput(e.target.value)
+                        updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMin', formatted)
+                      }}
+                      placeholder="12345"
+                      size="small"
+                      fullWidth
+                    />
+                  </Box>
+                  <Box className="plage-group" sx={{ bgcolor: 'white', p: 2, borderRadius: 1, border: '2px solid #dee2e6' }}>
+                    <Box className="plage-label" sx={{ fontWeight: 700, color: '#495057', mb: 1.5, fontSize: '1rem', textAlign: 'center', pb: 1, borderBottom: '2px solid #e9ecef' }}>
+                      Max
+                    </Box>
+                    <TextField
+                      label="Distance"
+                      type="number"
+                      value={serie.distanceMax}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMax', e.target.value)}
+                      placeholder="450"
+                      size="small"
+                      fullWidth
+                      helperText="Optionnel si différent"
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">m</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="VMA"
+                      type="number"
+                      value={serie.pourcentageVMAMax}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMax', e.target.value)}
+                      placeholder="90"
+                      size="small"
+                      fullWidth
+                      disabled={!vma}
+                      inputProps={{ step: 5 }}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="Allure"
+                      value={serie.allureMax}
+                      onChange={(e) => {
+                        const formatted = formatAllureInput(e.target.value)
+                        updateSerieWithDebounce(indexBloc, indexSerie, 'allureMax', formatted)
+                      }}
+                      placeholder="530"
+                      size="small"
+                      fullWidth
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">min/km</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="Temps"
+                      value={serie.tempsMax}
+                      onChange={(e) => {
+                        const formatted = formatTempsInput(e.target.value)
+                        updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMax', formatted)
+                      }}
+                      placeholder="12345"
+                      size="small"
+                      fullWidth
+                    />
+                  </Box>
+                </Box>
               )}
             </div>
           ))}
@@ -1040,7 +1157,8 @@ function App() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </LocalizationProvider>
   )
 }
 
