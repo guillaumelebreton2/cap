@@ -57,6 +57,12 @@ function App() {
       setOrdreManuel(JSON.parse(ordreManuelStocke))
     }
 
+    // Charger VMA
+    const vmaStocke = localStorage.getItem('plan-marathon-vma')
+    if (vmaStocke) {
+      setVma(vmaStocke)
+    }
+
     // Charger allure et temps marathon
     const allureMarathonStocke = localStorage.getItem('plan-marathon-allureMarathon')
     if (allureMarathonStocke) {
@@ -629,6 +635,12 @@ function App() {
     // Plus l'allure est rapide (petite), plus le % est élevé
     const pourcentage = (allureMarathonMinutes / allure) * 100
     return pourcentage
+  }
+
+  // Mettre à jour la VMA
+  const updateVMA = (value) => {
+    setVma(value)
+    localStorage.setItem('plan-marathon-vma', value)
   }
 
   // Mettre à jour l'allure marathon et calculer le temps
@@ -1271,14 +1283,14 @@ function App() {
         {/* Bloc Profil du coureur */}
         <div className="bloc-container" style={{ marginBottom: '2rem' }}>
           <div className="bloc-header">
-            <h2 style={{ margin: 0 }}>Profil du coureur</h2>
+            <h2 style={{ margin: 0, color: '#495057' }}>Profil du coureur</h2>
           </div>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <TextField
               label="VMA"
               type="number"
               value={vma}
-              onChange={(e) => setVma(e.target.value)}
+              onChange={(e) => updateVMA(e.target.value)}
               onFocus={handleFocus}
               placeholder="Ex: 16"
               size="small"
