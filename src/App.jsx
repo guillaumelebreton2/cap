@@ -228,44 +228,9 @@ function App() {
     return Number(tempsStr)
   }
 
-  // Extraire les heures d'un temps formaté
-  const extraireHeures = (tempsStr) => {
-    if (!tempsStr) return ''
-    const parts = tempsStr.split(':')
-    if (parts.length === 3) return parts[0] || ''
-    return ''
-  }
-
-  // Extraire les minutes d'un temps formaté
-  const extraireMinutes = (tempsStr) => {
-    if (!tempsStr) return ''
-    const parts = tempsStr.split(':')
-    if (parts.length === 3) return parts[1] || ''
-    if (parts.length === 2) return parts[0] || ''
-    return ''
-  }
-
-  // Extraire les secondes d'un temps formaté
-  const extraireSecondes = (tempsStr) => {
-    if (!tempsStr) return ''
-    const parts = tempsStr.split(':')
-    if (parts.length === 2) return parts[1] || ''
-    if (parts.length === 3) return parts[2] || ''
-    return ''
-  }
-
-  // Extraire les minutes d'une allure formatée
-  const extraireMinutesAllure = (allureStr) => {
-    if (!allureStr) return ''
-    const parts = allureStr.split(':')
-    return parts[0] || ''
-  }
-
-  // Extraire les secondes d'une allure formatée
-  const extraireSecondesAllure = (allureStr) => {
-    if (!allureStr) return ''
-    const parts = allureStr.split(':')
-    return parts[1] || ''
+  // Sélectionner tout le texte au focus
+  const handleFocus = (event) => {
+    event.target.select()
   }
 
   // Formater automatiquement l'allure pendant la saisie (mm:ss)
@@ -301,62 +266,6 @@ function App() {
     const minutes = numbers.slice(-4, -2)
     const heures = numbers.slice(0, -4)
     return `${heures}:${minutes}:${secondes}`
-  }
-
-  // Mettre à jour l'allure avec minutes et secondes séparées
-  const updateAllure = (indexBloc, indexSerie, typeAllure, typeValeur, value) => {
-    const nouveauxBlocs = [...blocs]
-    const serie = { ...nouveauxBlocs[indexBloc].series[indexSerie] }
-
-    // Récupérer les valeurs actuelles
-    const allureActuelle = serie[typeAllure] || ''
-    const minutesActuelles = extraireMinutesAllure(allureActuelle)
-    const secondesActuelles = extraireSecondesAllure(allureActuelle)
-
-    // Mettre à jour la valeur appropriée
-    const minutes = typeValeur === 'minutes' ? value : minutesActuelles
-    const secondes = typeValeur === 'secondes' ? value : secondesActuelles
-
-    // Formater la nouvelle allure
-    let newAllure = ''
-    if (minutes || secondes) {
-      newAllure = `${minutes || '0'}:${(secondes || '0').padStart(2, '0')}`
-    }
-
-    // Utiliser updateSerie pour mettre à jour
-    updateSerie(indexBloc, indexSerie, typeAllure, newAllure)
-  }
-
-  // Mettre à jour le temps d'une série avec heures, minutes et secondes séparées
-  const updateTemps = (indexBloc, indexSerie, typeTemps, typeValeur, value) => {
-    const nouveauxBlocs = [...blocs]
-    const serie = { ...nouveauxBlocs[indexBloc].series[indexSerie] }
-
-    // Récupérer les valeurs actuelles
-    const tempsActuel = serie[typeTemps] || ''
-    const heuresActuelles = extraireHeures(tempsActuel)
-    const minutesActuelles = extraireMinutes(tempsActuel)
-    const secondesActuelles = extraireSecondes(tempsActuel)
-
-    // Mettre à jour la valeur appropriée
-    const heures = typeValeur === 'heures' ? value : heuresActuelles
-    const minutes = typeValeur === 'minutes' ? value : minutesActuelles
-    const secondes = typeValeur === 'secondes' ? value : secondesActuelles
-
-    // Formater le nouveau temps
-    let newTemps = ''
-    if (heures || minutes || secondes) {
-      if (heures) {
-        // Format h:mm:ss
-        newTemps = `${heures}:${(minutes || '0').padStart(2, '0')}:${(secondes || '0').padStart(2, '0')}`
-      } else {
-        // Format mm:ss
-        newTemps = `${minutes || '0'}:${(secondes || '0').padStart(2, '0')}`
-      }
-    }
-
-    // Utiliser updateSerie pour mettre à jour
-    updateSerie(indexBloc, indexSerie, typeTemps, newTemps)
   }
 
   // Mettre à jour une série avec debounce pour les calculs automatiques
@@ -741,7 +650,7 @@ function App() {
             slotProps={{
               textField: {
                 size: 'small',
-                fullWidth: true
+                sx: { width: '180px' }
               }
             }}
           />
@@ -750,15 +659,16 @@ function App() {
             type="number"
             value={vma}
             onChange={(e) => setVma(e.target.value)}
+            onFocus={handleFocus}
             placeholder="Ex: 16"
             size="small"
-            fullWidth
+            sx={{ width: '150px' }}
             inputProps={{ step: 0.1 }}
             InputProps={{
               endAdornment: <InputAdornment position="end">km/h</InputAdornment>
             }}
           />
-          <button className="btn-primary" onClick={ajouterBloc}>+ Ajouter un bloc</button>
+          <button className="btn-primary" onClick={ajouterBloc} style={{ width: '170px' }}>+ Ajouter un bloc</button>
           <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>Sauvegarder</button>
         </div>
 
@@ -772,6 +682,7 @@ function App() {
                 type="number"
                 value={bloc.repetitions}
                 onChange={(e) => updateRepetitionsBloc(indexBloc, e.target.value)}
+                onFocus={handleFocus}
                 size="small"
                 inputProps={{ min: 1 }}
                 sx={{ width: '150px' }}
@@ -794,6 +705,7 @@ function App() {
                     type="number"
                     value={serie.repetitions}
                     onChange={(e) => updateSerie(indexBloc, indexSerie, 'repetitions', e.target.value)}
+                    onFocus={handleFocus}
                     size="small"
                     inputProps={{ min: 1 }}
                     sx={{ width: '120px' }}
@@ -836,6 +748,7 @@ function App() {
                     type="number"
                     value={serie.distance}
                     onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
+                    onFocus={handleFocus}
                     placeholder="400"
                     size="small"
                     fullWidth
@@ -852,6 +765,7 @@ function App() {
                       const formatted = formatTempsInput(e.target.value)
                       updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
                     }}
+                    onFocus={handleFocus}
                     placeholder="12345"
                     size="small"
                     fullWidth
@@ -867,6 +781,7 @@ function App() {
                     type="number"
                     value={serie.distance}
                     onChange={(e) => updateSerie(indexBloc, indexSerie, 'distance', e.target.value)}
+                    onFocus={handleFocus}
                     placeholder="400"
                     size="small"
                     sx={{ width: '120px' }}
@@ -879,6 +794,7 @@ function App() {
                     type="number"
                     value={serie.pourcentageVMA}
                     onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMA', e.target.value)}
+                    onFocus={handleFocus}
                     placeholder="85"
                     size="small"
                     disabled={!vma}
@@ -895,6 +811,7 @@ function App() {
                       const formatted = formatAllureInput(e.target.value)
                       updateSerieWithDebounce(indexBloc, indexSerie, 'allure', formatted)
                     }}
+                    onFocus={handleFocus}
                     placeholder="530"
                     size="small"
                     sx={{ width: '140px' }}
@@ -909,6 +826,7 @@ function App() {
                       const formatted = formatTempsInput(e.target.value)
                       updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
                     }}
+                    onFocus={handleFocus}
                     placeholder="12345"
                     size="small"
                     sx={{ width: '150px' }}
@@ -925,6 +843,7 @@ function App() {
                       type="number"
                       value={serie.distanceMin}
                       onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMin', e.target.value)}
+                      onFocus={handleFocus}
                       placeholder="400"
                       size="small"
                       fullWidth
@@ -939,6 +858,7 @@ function App() {
                       type="number"
                       value={serie.pourcentageVMAMin}
                       onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMin', e.target.value)}
+                      onFocus={handleFocus}
                       placeholder="80"
                       size="small"
                       fullWidth
@@ -956,6 +876,7 @@ function App() {
                         const formatted = formatAllureInput(e.target.value)
                         updateSerieWithDebounce(indexBloc, indexSerie, 'allureMin', formatted)
                       }}
+                      onFocus={handleFocus}
                       placeholder="500"
                       size="small"
                       fullWidth
@@ -971,6 +892,7 @@ function App() {
                         const formatted = formatTempsInput(e.target.value)
                         updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMin', formatted)
                       }}
+                      onFocus={handleFocus}
                       placeholder="12345"
                       size="small"
                       fullWidth
@@ -985,6 +907,7 @@ function App() {
                       type="number"
                       value={serie.distanceMax}
                       onChange={(e) => updateSerie(indexBloc, indexSerie, 'distanceMax', e.target.value)}
+                      onFocus={handleFocus}
                       placeholder="450"
                       size="small"
                       fullWidth
@@ -999,6 +922,7 @@ function App() {
                       type="number"
                       value={serie.pourcentageVMAMax}
                       onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageVMAMax', e.target.value)}
+                      onFocus={handleFocus}
                       placeholder="90"
                       size="small"
                       fullWidth
@@ -1016,6 +940,7 @@ function App() {
                         const formatted = formatAllureInput(e.target.value)
                         updateSerieWithDebounce(indexBloc, indexSerie, 'allureMax', formatted)
                       }}
+                      onFocus={handleFocus}
                       placeholder="530"
                       size="small"
                       fullWidth
@@ -1031,6 +956,7 @@ function App() {
                         const formatted = formatTempsInput(e.target.value)
                         updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMax', formatted)
                       }}
+                      onFocus={handleFocus}
                       placeholder="12345"
                       size="small"
                       fullWidth

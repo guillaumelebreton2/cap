@@ -37,6 +37,15 @@ h1 {
   margin-bottom: 0;
 }
 
+.top-section > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.top-section > * {
+  flex-shrink: 0;
+}
+
 /* Boutons */
 button {
   padding: 0.6rem 1.2rem;
@@ -519,9 +528,14 @@ button {
     align-items: stretch;
   }
 
+  .top-section > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
   .serie-fields,
   .serie-fields-plage {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 
   .historique-item {
