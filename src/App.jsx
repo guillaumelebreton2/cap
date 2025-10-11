@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -28,6 +28,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import SummarizeIcon from '@mui/icons-material/Summarize'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -50,6 +51,9 @@ function App() {
   const [seancesDetailsOuvertes, setSeancesDetailsOuvertes] = useState([]) // IDs des séances avec détails affichés
   const [allureMarathon, setAllureMarathon] = useState('') // Allure marathon en min/km (format "5:30")
   const [tempsMarathon, setTempsMarathon] = useState('') // Temps marathon en h:mm:ss
+
+  // Référence vers le bloc résumé pour pouvoir scroller vers lui
+  const resumeRef = useRef(null)
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
@@ -131,6 +135,21 @@ function App() {
     setDateSeance(seance.dateSeance || '')
     setCommentaireSeance(seance.commentaire || '')
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Voir le résumé d'une séance (mode lecture seule)
+  const voirResumeSeance = (seance) => {
+    // Charger les données SANS mettre seanceEnCoursEdition (mode aperçu)
+    setVma(seance.vma || '')
+    setBlocs(JSON.parse(JSON.stringify(seance.blocs))) // Deep copy
+    setNomSeance(`${seance.nom} (Aperçu)`)
+    setDateSeance(seance.dateSeance || '')
+    setCommentaireSeance(seance.commentaire || '')
+
+    // Scroller vers le résumé après un court délai pour laisser le temps au rendu
+    setTimeout(() => {
+      resumeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   // Mettre à jour une séance existante
@@ -1998,7 +2017,11 @@ END:VEVENT
             {seanceEnCoursEdition && (
               <button className="btn-secondary" onClick={annulerEdition}>Annuler</button>
             )}
-            <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>
+            <button
+              className="btn-success"
+              onClick={sauvegarderSeance}
+              disabled={blocs.length === 0 || nomSeance.includes('(Aperçu)')}
+            >
               {seanceEnCoursEdition ? 'Mettre à jour' : 'Sauvegarder'}
             </button>
           </div>
@@ -2559,7 +2582,7 @@ END:VEVENT
       })}
 
       {blocs.length > 0 && (
-        <div className="summary">
+        <div ref={resumeRef} className="summary">
           <h2>Résumé de la séance</h2>
           <div className="summary-grid">
             <div className="summary-card">
@@ -2848,7 +2871,6 @@ END:VEVENT
                         {new Date(seance.dateSeance).toLocaleDateString('fr-FR')}
                       </span>
                     )}
-                    <span>{seance.blocs.length} bloc(s)</span>
                     <span>
                       {(() => {
                         const distanceResult = calculerDistanceTotaleSeance(seance)
@@ -2987,32 +3009,53 @@ END:VEVENT
                     </div>
                   )}
 
-                  <button
-                    onClick={() => toggleDetailsSeance(seance.id)}
-                    style={{
-                      alignSelf: 'flex-start',
-                      background: 'transparent',
-                      border: '1px solid #007bff',
-                      color: '#007bff',
-                      padding: '0.25rem 0.75rem',
-                      borderRadius: '4px',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem'
-                    }}
-                  >
-                    {seancesDetailsOuvertes.includes(seance.id) ? (
-                      <>
-                        <VisibilityOffIcon fontSize="small" /> Masquer les détails <ExpandLessIcon fontSize="small" />
-                      </>
-                    ) : (
-                      <>
-                        <VisibilityIcon fontSize="small" /> Voir les détails <ExpandMoreIcon fontSize="small" />
-                      </>
-                    )}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => toggleDetailsSeance(seance.id)}
+                      style={{
+                        alignSelf: 'flex-start',
+                        background: 'transparent',
+                        border: '1px solid #007bff',
+                        color: '#007bff',
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '4px',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      {seancesDetailsOuvertes.includes(seance.id) ? (
+                        <>
+                          <VisibilityOffIcon fontSize="small" /> Masquer les détails <ExpandLessIcon fontSize="small" />
+                        </>
+                      ) : (
+                        <>
+                          <VisibilityIcon fontSize="small" /> Voir les détails <ExpandMoreIcon fontSize="small" />
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => voirResumeSeance(seance)}
+                      style={{
+                        alignSelf: 'flex-start',
+                        background: 'transparent',
+                        border: '1px solid #17a2b8',
+                        color: '#17a2b8',
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '4px',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      <SummarizeIcon fontSize="small" /> Voir le résumé
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="historique-actions">
