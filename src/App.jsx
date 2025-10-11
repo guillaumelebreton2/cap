@@ -17,6 +17,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import FileUploadIcon from '@mui/icons-material/FileUpload'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -35,6 +36,8 @@ function App() {
   const [typeTri, setTypeTri] = useState('dateCreation') // 'dateSeance', 'dateCreation', 'manuel'
   const [ordreManuel, setOrdreManuel] = useState([]) // Tableau d'IDs pour l'ordre manuel
   const [seancesSelectionnees, setSeancesSelectionnees] = useState([]) // IDs des séances sélectionnées
+  const [allureMarathon, setAllureMarathon] = useState('') // Allure marathon en min/km (format "5:30")
+  const [tempsMarathon, setTempsMarathon] = useState('') // Temps marathon en h:mm:ss
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
@@ -52,6 +55,17 @@ function App() {
     const ordreManuelStocke = localStorage.getItem('plan-marathon-ordreManuel')
     if (ordreManuelStocke) {
       setOrdreManuel(JSON.parse(ordreManuelStocke))
+    }
+
+    // Charger allure et temps marathon
+    const allureMarathonStocke = localStorage.getItem('plan-marathon-allureMarathon')
+    if (allureMarathonStocke) {
+      setAllureMarathon(allureMarathonStocke)
+    }
+
+    const tempsMarathonStocke = localStorage.getItem('plan-marathon-tempsMarathon')
+    if (tempsMarathonStocke) {
+      setTempsMarathon(tempsMarathonStocke)
     }
   }, [])
 
@@ -341,6 +355,142 @@ function App() {
     reader.readAsText(file)
   }
 
+  // Actualiser une série en fonction de l'allure marathon actuelle
+  const actualiserSerie = (serie) => {
+    if (!allureMarathon) return serie
+
+    const serieActualisee = { ...serie }
+
+    // Mode fixe
+    if (serie.typePlage === 'fixe' && serie.pourcentageAllureMarathon) {
+      const allure = calculerAllureDepuisAllureMarathon(serie.pourcentageAllureMarathon)
+      if (allure) {
+        serieActualisee.allure = formaterAllure(allure)
+        if (serie.distance) {
+          const temps = calculerTemps(serie.distance, allure)
+          serieActualisee.temps = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serieActualisee.pourcentageVMA = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
+      }
+    }
+
+    // Mode plage - Min
+    if (serie.typePlage === 'plage' && serie.pourcentageAllureMarathonMin) {
+      const allure = calculerAllureDepuisAllureMarathon(serie.pourcentageAllureMarathonMin)
+      if (allure) {
+        serieActualisee.allureMin = formaterAllure(allure)
+        const distance = parseFloat(serie.distanceMin || serie.distance)
+        if (distance) {
+          const temps = calculerTemps(distance, allure)
+          serieActualisee.tempsMin = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA min si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serieActualisee.pourcentageVMAMin = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
+      }
+    }
+
+    // Mode plage - Max
+    if (serie.typePlage === 'plage' && serie.pourcentageAllureMarathonMax) {
+      const allure = calculerAllureDepuisAllureMarathon(serie.pourcentageAllureMarathonMax)
+      if (allure) {
+        serieActualisee.allureMax = formaterAllure(allure)
+        const distance = parseFloat(serie.distanceMax || serie.distance)
+        if (distance) {
+          const temps = calculerTemps(distance, allure)
+          serieActualisee.tempsMax = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA max si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serieActualisee.pourcentageVMAMax = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
+      }
+    }
+
+    return serieActualisee
+  }
+
+  // Actualiser une séance complète
+  const actualiserSeance = (seance) => {
+    if (!allureMarathon) {
+      alert('Veuillez définir une allure marathon dans le profil du coureur')
+      return seance
+    }
+
+    const seanceActualisee = JSON.parse(JSON.stringify(seance)) // Deep copy
+
+    // Parcourir tous les blocs et séries
+    seanceActualisee.blocs = seanceActualisee.blocs.map(bloc => ({
+      ...bloc,
+      series: bloc.series.map(serie => actualiserSerie(serie))
+    }))
+
+    return seanceActualisee
+  }
+
+  // Actualiser une séance individuelle de l'historique
+  const actualiserSeanceHistorique = (id) => {
+    if (!allureMarathon) {
+      alert('Veuillez définir une allure marathon dans le profil du coureur')
+      return
+    }
+
+    const nouvelHistorique = historique.map(s =>
+      s.id === id ? actualiserSeance(s) : s
+    )
+    setHistorique(nouvelHistorique)
+    localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+    alert('Séance actualisée !')
+  }
+
+  // Actualiser toutes les séances sélectionnées
+  const actualiserSelection = () => {
+    if (!allureMarathon) {
+      alert('Veuillez définir une allure marathon dans le profil du coureur')
+      return
+    }
+
+    if (seancesSelectionnees.length === 0) {
+      alert('Veuillez sélectionner au moins une séance')
+      return
+    }
+
+    const nouvelHistorique = historique.map(s =>
+      seancesSelectionnees.includes(s.id) ? actualiserSeance(s) : s
+    )
+    setHistorique(nouvelHistorique)
+    localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+    setSeancesSelectionnees([])
+    alert(`${seancesSelectionnees.length} séance(s) actualisée(s) !`)
+  }
+
+  // Actualiser tout l'historique
+  const actualiserTout = () => {
+    if (!allureMarathon) {
+      alert('Veuillez définir une allure marathon dans le profil du coureur')
+      return
+    }
+
+    const reponse = confirm(
+      `Êtes-vous sûr de vouloir actualiser toutes les séances (${historique.length}) en fonction de l'allure marathon actuelle ?\n\n` +
+      `Cette action recalculera toutes les séries qui utilisent le % Allure Marathon.`
+    )
+
+    if (!reponse) return
+
+    const nouvelHistorique = historique.map(s => actualiserSeance(s))
+    setHistorique(nouvelHistorique)
+    localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+    alert(`${historique.length} séance(s) actualisée(s) !`)
+  }
+
   // Ajouter un nouveau bloc
   const ajouterBloc = () => {
     setBlocs([...blocs, {
@@ -349,12 +499,15 @@ function App() {
         repetitions: 1,
         typePlage: 'fixe', // 'fixe' ou 'plage'
         pourcentageVMA: '',
+        pourcentageAllureMarathon: '',
         allure: '',
         distance: '',
         temps: '',
         // Pour les plages
         pourcentageVMAMin: '',
         pourcentageVMAMax: '',
+        pourcentageAllureMarathonMin: '',
+        pourcentageAllureMarathonMax: '',
         allureMin: '',
         allureMax: '',
         distanceMin: '',
@@ -392,11 +545,14 @@ function App() {
       repetitions: 1,
       typePlage: 'fixe',
       pourcentageVMA: '',
+      pourcentageAllureMarathon: '',
       allure: '',
       distance: '',
       temps: '',
       pourcentageVMAMin: '',
       pourcentageVMAMax: '',
+      pourcentageAllureMarathonMin: '',
+      pourcentageAllureMarathonMax: '',
       allureMin: '',
       allureMax: '',
       distanceMin: '',
@@ -452,6 +608,70 @@ function App() {
     const distanceKm = distance / 1000
     const tempsMinutes = temps / 60
     return tempsMinutes / distanceKm
+  }
+
+  // Calculer l'allure depuis le pourcentage d'allure marathon
+  const calculerAllureDepuisAllureMarathon = (pourcentage) => {
+    if (!allureMarathon || !pourcentage) return null
+    const allureMarathonMinutes = parserAllure(allureMarathon)
+    if (!allureMarathonMinutes) return null
+    // Plus le % est élevé, plus on va vite, donc allure plus rapide (moins de min/km)
+    // 100% = allure marathon, 110% = plus rapide, 90% = plus lent
+    const allure = allureMarathonMinutes * (100 / pourcentage)
+    return allure
+  }
+
+  // Calculer le pourcentage d'allure marathon depuis une allure
+  const calculerPourcentageAllureMarathon = (allure) => {
+    if (!allureMarathon || !allure) return null
+    const allureMarathonMinutes = parserAllure(allureMarathon)
+    if (!allureMarathonMinutes) return null
+    // Plus l'allure est rapide (petite), plus le % est élevé
+    const pourcentage = (allureMarathonMinutes / allure) * 100
+    return pourcentage
+  }
+
+  // Mettre à jour l'allure marathon et calculer le temps
+  const updateAllureMarathon = (value) => {
+    setAllureMarathon(value)
+    localStorage.setItem('plan-marathon-allureMarathon', value)
+
+    const allureMinutes = parserAllure(value)
+    if (allureMinutes) {
+      const distanceMarathon = 42.195
+      const tempsSecondes = calculerTemps(distanceMarathon * 1000, allureMinutes)
+      if (tempsSecondes) {
+        const tempsFormate = formaterTemps(tempsSecondes)
+        setTempsMarathon(tempsFormate)
+        localStorage.setItem('plan-marathon-tempsMarathon', tempsFormate)
+      }
+    }
+  }
+
+  // Mettre à jour le temps marathon et calculer l'allure
+  const updateTempsMarathon = (value) => {
+    setTempsMarathon(value)
+    localStorage.setItem('plan-marathon-tempsMarathon', value)
+
+    const tempsSecondes = parserTemps(value)
+    if (tempsSecondes) {
+      const distanceMarathon = 42.195
+      const allure = calculerAllure(distanceMarathon * 1000, tempsSecondes)
+      if (allure) {
+        const allureFormatee = formaterAllure(allure)
+        setAllureMarathon(allureFormatee)
+        localStorage.setItem('plan-marathon-allureMarathon', allureFormatee)
+      }
+    }
+  }
+
+  // Calculer le % VMA marathon
+  const calculerPourcentageVMAMarathon = () => {
+    if (!vma || !allureMarathon) return null
+    const allureMarathonMinutes = parserAllure(allureMarathon)
+    if (!allureMarathonMinutes) return null
+    const pourcentage = calculerPourcentageVMA(vma, allureMarathonMinutes)
+    return pourcentage ? Math.round(pourcentage) : null
   }
 
   // Parser l'allure au format min:sec/km en minutes décimales
@@ -615,6 +835,29 @@ function App() {
           const temps = calculerTemps(serie.distance, allure)
           serie.temps = temps ? formaterTemps(temps) : ''
         }
+        // Mettre à jour le % allure marathon si allure marathon est définie
+        if (allureMarathon) {
+          const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+          serie.pourcentageAllureMarathon = pourcentageAllureMarathon ? Math.round(pourcentageAllureMarathon / 5) * 5 : ''
+        }
+      }
+    }
+
+    // Si pourcentage allure marathon change
+    if (field === 'pourcentageAllureMarathon') {
+      serie.pourcentageAllureMarathon = value
+      const allure = calculerAllureDepuisAllureMarathon(value)
+      if (allure) {
+        serie.allure = formaterAllure(allure)
+        if (serie.distance) {
+          const temps = calculerTemps(serie.distance, allure)
+          serie.temps = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serie.pourcentageVMA = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
       }
     }
 
@@ -626,6 +869,11 @@ function App() {
         const pourcentage = calculerPourcentageVMA(vma, allureMinutes)
         const pourcentageArrondi = Math.round(pourcentage / 5) * 5
         serie.pourcentageVMA = pourcentageArrondi
+      }
+      if (allureMarathon && allureMinutes) {
+        const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allureMinutes)
+        const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+        serie.pourcentageAllureMarathon = pourcentageArrondi
       }
       if (serie.distance && allureMinutes) {
         const temps = calculerTemps(serie.distance, allureMinutes)
@@ -655,6 +903,11 @@ function App() {
             const pourcentageArrondi = Math.round(pourcentage / 5) * 5
             serie.pourcentageVMA = pourcentageArrondi
           }
+          if (allureMarathon) {
+            const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+            const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+            serie.pourcentageAllureMarathon = pourcentageArrondi
+          }
         }
       }
       // Si on a l'allure mais pas la distance, calculer la distance
@@ -680,6 +933,30 @@ function App() {
           const temps = calculerTemps(distance, allure)
           serie.tempsMin = temps ? formaterTemps(temps) : ''
         }
+        // Mettre à jour le % allure marathon min si allure marathon est définie
+        if (allureMarathon) {
+          const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+          serie.pourcentageAllureMarathonMin = pourcentageAllureMarathon ? Math.round(pourcentageAllureMarathon / 5) * 5 : ''
+        }
+      }
+    }
+
+    // Si pourcentage allure marathon min change
+    if (field === 'pourcentageAllureMarathonMin') {
+      serie.pourcentageAllureMarathonMin = value
+      const allure = calculerAllureDepuisAllureMarathon(value)
+      if (allure) {
+        serie.allureMin = formaterAllure(allure)
+        const distance = parseFloat(serie.distanceMin || serie.distance)
+        if (distance) {
+          const temps = calculerTemps(distance, allure)
+          serie.tempsMin = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA min si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serie.pourcentageVMAMin = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
       }
     }
 
@@ -694,6 +971,30 @@ function App() {
           const temps = calculerTemps(distance, allure)
           serie.tempsMax = temps ? formaterTemps(temps) : ''
         }
+        // Mettre à jour le % allure marathon max si allure marathon est définie
+        if (allureMarathon) {
+          const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+          serie.pourcentageAllureMarathonMax = pourcentageAllureMarathon ? Math.round(pourcentageAllureMarathon / 5) * 5 : ''
+        }
+      }
+    }
+
+    // Si pourcentage allure marathon max change
+    if (field === 'pourcentageAllureMarathonMax') {
+      serie.pourcentageAllureMarathonMax = value
+      const allure = calculerAllureDepuisAllureMarathon(value)
+      if (allure) {
+        serie.allureMax = formaterAllure(allure)
+        const distance = parseFloat(serie.distanceMax || serie.distance)
+        if (distance) {
+          const temps = calculerTemps(distance, allure)
+          serie.tempsMax = temps ? formaterTemps(temps) : ''
+        }
+        // Mettre à jour le % VMA max si VMA est définie
+        if (vma) {
+          const pourcentageVMA = calculerPourcentageVMA(vma, allure)
+          serie.pourcentageVMAMax = pourcentageVMA ? Math.round(pourcentageVMA / 5) * 5 : ''
+        }
       }
     }
 
@@ -705,6 +1006,11 @@ function App() {
         const pourcentage = calculerPourcentageVMA(vma, allureMinutes)
         const pourcentageArrondi = Math.round(pourcentage / 5) * 5
         serie.pourcentageVMAMin = pourcentageArrondi
+      }
+      if (allureMarathon && allureMinutes) {
+        const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allureMinutes)
+        const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+        serie.pourcentageAllureMarathonMin = pourcentageArrondi
       }
       const distance = parseFloat(serie.distanceMin || serie.distance)
       if (distance && allureMinutes) {
@@ -730,6 +1036,11 @@ function App() {
         const pourcentage = calculerPourcentageVMA(vma, allureMinutes)
         const pourcentageArrondi = Math.round(pourcentage / 5) * 5
         serie.pourcentageVMAMax = pourcentageArrondi
+      }
+      if (allureMarathon && allureMinutes) {
+        const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allureMinutes)
+        const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+        serie.pourcentageAllureMarathonMax = pourcentageArrondi
       }
       const distance = parseFloat(serie.distanceMax || serie.distance)
       if (distance && allureMinutes) {
@@ -761,6 +1072,11 @@ function App() {
             const pourcentageArrondi = Math.round(pourcentage / 5) * 5
             serie.pourcentageVMAMin = pourcentageArrondi
           }
+          if (allureMarathon) {
+            const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+            const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+            serie.pourcentageAllureMarathonMin = pourcentageArrondi
+          }
         }
       }
       // Si on a l'allure mais pas la distance, calculer la distance
@@ -787,6 +1103,11 @@ function App() {
             const pourcentage = calculerPourcentageVMA(vma, allure)
             const pourcentageArrondi = Math.round(pourcentage / 5) * 5
             serie.pourcentageVMAMax = pourcentageArrondi
+          }
+          if (allureMarathon) {
+            const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+            const pourcentageArrondi = Math.round(pourcentageAllureMarathon / 5) * 5
+            serie.pourcentageAllureMarathonMax = pourcentageArrondi
           }
         }
       }
@@ -879,6 +1200,10 @@ function App() {
               const pourcentage = calculerPourcentageVMA(vma, allure)
               serie.pourcentageVMAMin = Math.round(pourcentage / 5) * 5
             }
+            if (allureMarathon) {
+              const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+              serie.pourcentageAllureMarathonMin = Math.round(pourcentageAllureMarathon / 5) * 5
+            }
           }
         }
         // Calculer avec distance max si elle existe
@@ -890,6 +1215,10 @@ function App() {
             if (vma) {
               const pourcentage = calculerPourcentageVMA(vma, allure)
               serie.pourcentageVMAMax = Math.round(pourcentage / 5) * 5
+            }
+            if (allureMarathon) {
+              const pourcentageAllureMarathon = calculerPourcentageAllureMarathon(allure)
+              serie.pourcentageAllureMarathonMax = Math.round(pourcentageAllureMarathon / 5) * 5
             }
           }
         }
@@ -939,6 +1268,65 @@ function App() {
       <div className="app">
         <h1>Plan Marathon - Calculateur d'allures</h1>
 
+        {/* Bloc Profil du coureur */}
+        <div className="bloc-container" style={{ marginBottom: '2rem' }}>
+          <div className="bloc-header">
+            <h2 style={{ margin: 0 }}>Profil du coureur</h2>
+          </div>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <TextField
+              label="VMA"
+              type="number"
+              value={vma}
+              onChange={(e) => setVma(e.target.value)}
+              onFocus={handleFocus}
+              placeholder="Ex: 16"
+              size="small"
+              sx={{ width: '150px' }}
+              inputProps={{ step: 0.1 }}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">km/h</InputAdornment>
+              }}
+            />
+            <TextField
+              label="Allure marathon"
+              value={allureMarathon}
+              onChange={(e) => {
+                const formatted = formatAllureInput(e.target.value)
+                updateAllureMarathon(formatted)
+              }}
+              onFocus={handleFocus}
+              placeholder="530"
+              size="small"
+              sx={{ width: '180px' }}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">min/km</InputAdornment>
+              }}
+            />
+            <TextField
+              label="Temps marathon"
+              value={tempsMarathon}
+              onChange={(e) => {
+                const formatted = formatTempsInput(e.target.value)
+                updateTempsMarathon(formatted)
+              }}
+              onFocus={handleFocus}
+              placeholder="34500"
+              size="small"
+              sx={{ width: '180px' }}
+              
+            />
+            {calculerPourcentageVMAMarathon() && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#e3f2fd', px: 2, py: 0.9, borderRadius: 1 }}>
+                <span style={{ fontSize: '0.9rem', color: '#666', fontWeight: 500 }}>% VMA Marathon:</span>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1976d2' }}>
+                  {calculerPourcentageVMAMarathon()}%
+                </span>
+              </Box>
+            )}
+          </Box>
+        </div>
+
         <div className="top-section">
           <TextField
             label="Nom de la séance"
@@ -957,20 +1345,6 @@ function App() {
                 size: 'small',
                 sx: { width: '180px' }
               }
-            }}
-          />
-          <TextField
-            label="VMA"
-            type="number"
-            value={vma}
-            onChange={(e) => setVma(e.target.value)}
-            onFocus={handleFocus}
-            placeholder="Ex: 16"
-            size="small"
-            sx={{ width: '150px' }}
-            inputProps={{ step: 0.1 }}
-            InputProps={{
-              endAdornment: <InputAdornment position="end">km/h</InputAdornment>
             }}
           />
           <button className="btn-primary" onClick={ajouterBloc} style={{ width: '170px' }}>+ Ajouter un bloc</button>
@@ -1115,6 +1489,21 @@ function App() {
                     }}
                   />
                   <TextField
+                    label="Allure Marathon"
+                    type="number"
+                    value={serie.pourcentageAllureMarathon}
+                    onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageAllureMarathon', e.target.value)}
+                    onFocus={handleFocus}
+                    placeholder="100"
+                    size="small"
+                    disabled={!allureMarathon}
+                    inputProps={{ step: 5 }}
+                    sx={{ width: '140px' }}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">%</InputAdornment>
+                    }}
+                  />
+                  <TextField
                     label="Allure"
                     value={serie.allure}
                     onChange={(e) => {
@@ -1180,6 +1569,22 @@ function App() {
                       }}
                     />
                     <TextField
+                      label="Allure Marathon"
+                      type="number"
+                      value={serie.pourcentageAllureMarathonMin}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageAllureMarathonMin', e.target.value)}
+                      onFocus={handleFocus}
+                      placeholder="95"
+                      size="small"
+                      fullWidth
+                      disabled={!allureMarathon}
+                      inputProps={{ step: 5 }}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>
+                      }}
+                    />
+                    <TextField
                       label="Allure"
                       value={serie.allureMin}
                       onChange={(e) => {
@@ -1237,6 +1642,22 @@ function App() {
                       size="small"
                       fullWidth
                       disabled={!vma}
+                      inputProps={{ step: 5 }}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>
+                      }}
+                    />
+                    <TextField
+                      label="Allure Marathon"
+                      type="number"
+                      value={serie.pourcentageAllureMarathonMax}
+                      onChange={(e) => updateSerie(indexBloc, indexSerie, 'pourcentageAllureMarathonMax', e.target.value)}
+                      onFocus={handleFocus}
+                      placeholder="105"
+                      size="small"
+                      fullWidth
+                      disabled={!allureMarathon}
                       inputProps={{ step: 5 }}
                       sx={{ mb: 2 }}
                       InputProps={{
@@ -1419,6 +1840,24 @@ function App() {
               Importer
             </button>
           </label>
+          {historique.length > 0 && allureMarathon && (
+            <>
+              <Tooltip title="Recalculer toutes les séries avec % Allure Marathon selon l'allure marathon actuelle">
+                <button className="btn-primary" onClick={actualiserTout}>
+                  <RefreshIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
+                  Actualiser tout
+                </button>
+              </Tooltip>
+              {seancesSelectionnees.length > 0 && (
+                <Tooltip title="Recalculer les séances sélectionnées avec % Allure Marathon">
+                  <button className="btn-primary" onClick={actualiserSelection}>
+                    <RefreshIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
+                    Actualiser la sélection ({seancesSelectionnees.length})
+                  </button>
+                </Tooltip>
+              )}
+            </>
+          )}
         </div>
 
         {historique.length === 0 ? (
@@ -1472,6 +1911,17 @@ function App() {
                       </span>
                     </Tooltip>
                   </>
+                )}
+                {allureMarathon && (
+                  <Tooltip title="Actualiser cette séance avec l'allure marathon actuelle">
+                    <IconButton
+                      onClick={() => actualiserSeanceHistorique(seance.id)}
+                      size="small"
+                      color="primary"
+                    >
+                      <RefreshIcon />
+                    </IconButton>
+                  </Tooltip>
                 )}
                 <Tooltip title="Exporter cette séance">
                   <IconButton
