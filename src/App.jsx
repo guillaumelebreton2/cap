@@ -17,6 +17,7 @@ function App() {
   const [nomSeance, setNomSeance] = useState('')
   const [dateSeance, setDateSeance] = useState('')
   const [typingTimeouts, setTypingTimeouts] = useState({})
+  const [seanceEnCoursEdition, setSeanceEnCoursEdition] = useState(null)
 
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
@@ -46,6 +47,50 @@ function App() {
     setBlocs(seance.blocs)
     setNomSeance(seance.nom || '')
     setDateSeance(seance.dateSeance || '')
+  }
+
+  // Modifier une séance existante (charger en mode édition)
+  const modifierSeance = (seance) => {
+    setSeanceEnCoursEdition(seance)
+    setVma(seance.vma || '')
+    setBlocs(JSON.parse(JSON.stringify(seance.blocs))) // Deep copy pour éviter mutations
+    setNomSeance(seance.nom || '')
+    setDateSeance(seance.dateSeance || '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Mettre à jour une séance existante
+  const mettreAJourSeance = () => {
+    if (!nomSeance.trim()) {
+      alert('Veuillez donner un nom à la séance')
+      return
+    }
+    if (!seanceEnCoursEdition) return
+
+    const nouvelHistorique = historique.map(s =>
+      s.id === seanceEnCoursEdition.id
+        ? { ...s, nom: nomSeance, vma, blocs, dateSeance }
+        : s
+    )
+    setHistorique(nouvelHistorique)
+    localStorage.setItem('plan-marathon-historique', JSON.stringify(nouvelHistorique))
+
+    // Réinitialiser le formulaire et sortir du mode édition
+    setSeanceEnCoursEdition(null)
+    setNomSeance('')
+    setVma('')
+    setBlocs([])
+    setDateSeance('')
+    alert('Séance mise à jour !')
+  }
+
+  // Annuler l'édition
+  const annulerEdition = () => {
+    setSeanceEnCoursEdition(null)
+    setNomSeance('')
+    setVma('')
+    setBlocs([])
+    setDateSeance('')
   }
 
   // Ajouter un nouveau bloc
@@ -619,14 +664,26 @@ function App() {
     }, 0)
   }
 
-  // Sauvegarder la séance
+  // Sauvegarder la séance (création ou mise à jour)
   const sauvegarderSeance = () => {
     if (!nomSeance.trim()) {
       alert('Veuillez donner un nom à la séance')
       return
     }
-    sauvegarderHistorique({ nom: nomSeance, vma, blocs, dateSeance })
-    alert('Séance sauvegardée !')
+
+    // Si on est en mode édition, mettre à jour au lieu de créer
+    if (seanceEnCoursEdition) {
+      mettreAJourSeance()
+    } else {
+      // Création d'une nouvelle séance
+      sauvegarderHistorique({ nom: nomSeance, vma, blocs, dateSeance })
+      alert('Séance sauvegardée !')
+      // Réinitialiser le formulaire après sauvegarde
+      setNomSeance('')
+      setVma('')
+      setBlocs([])
+      setDateSeance('')
+    }
   }
 
   return (
@@ -669,7 +726,12 @@ function App() {
             }}
           />
           <button className="btn-primary" onClick={ajouterBloc} style={{ width: '170px' }}>+ Ajouter un bloc</button>
-          <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>Sauvegarder</button>
+          {seanceEnCoursEdition && (
+            <button className="btn-secondary" onClick={annulerEdition}>Annuler</button>
+          )}
+          <button className="btn-success" onClick={sauvegarderSeance} disabled={blocs.length === 0}>
+            {seanceEnCoursEdition ? 'Mettre à jour' : 'Sauvegarder'}
+          </button>
         </div>
 
       {blocs.map((bloc, indexBloc) => (
@@ -1077,6 +1139,7 @@ function App() {
               </div>
               <div className="historique-actions">
                 <button className="btn-secondary" onClick={() => chargerSeance(seance)}>Charger</button>
+                <button className="btn-primary" onClick={() => modifierSeance(seance)}>Modifier</button>
                 <button className="btn-danger" onClick={() => supprimerSeance(seance.id)}>Supprimer</button>
               </div>
             </div>
