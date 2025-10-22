@@ -43,7 +43,6 @@ function App() {
   const [nomSeance, setNomSeance] = useState('')
   const [dateSeance, setDateSeance] = useState('')
   const [commentaireSeance, setCommentaireSeance] = useState('')
-  const [typingTimeouts, setTypingTimeouts] = useState({})
   const [seanceEnCoursEdition, setSeanceEnCoursEdition] = useState(null)
   const [typeTri, setTypeTri] = useState('dateCreation') // 'dateSeance', 'dateCreation', 'manuel'
   const [ordreManuel, setOrdreManuel] = useState([]) // Tableau d'IDs pour l'ordre manuel
@@ -738,15 +737,10 @@ X-WR-TIMEZONE:Europe/Paris
         const numeroCourse = seance.blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
 
         // Titre du bloc selon le type
-        if (blocType === 'echauffement') {
-          description += `Échauffement`
-        } else if (blocType === 'course') {
-          description += `Course ${numeroCourse}`
-          if (repetitionsBloc > 1) {
-            description += ` (×${repetitionsBloc})`
-          }
-        } else if (blocType === 'recuperation') {
-          description += `Récupération`
+        const label = getBlocTypeLabel(blocType, blocType === 'course' ? numeroCourse : null)
+        description += label
+        if (blocType === 'course' && repetitionsBloc > 1) {
+          description += ` (×${repetitionsBloc})`
         }
 
         description += `:\\n`
@@ -1004,7 +998,7 @@ END:VEVENT
   }
 
   // Obtenir le libellé du type de bloc
-  const getBlocTypeLabel = (type) => {
+  const getBlocTypeLabel = (type, numeroCourse = null) => {
     switch (type) {
       case 'echauffement':
         return 'Échauffement'
@@ -1012,7 +1006,7 @@ END:VEVENT
         return 'Récupération'
       case 'course':
       default:
-        return 'Course'
+        return numeroCourse ? `Course ${numeroCourse}` : 'Course'
     }
   }
 
@@ -1435,31 +1429,11 @@ END:VEVENT
     return `${heures}:${minutes}:${secondes}`
   }
 
-  // Mettre à jour une série avec debounce pour les calculs automatiques
-  const updateSerieWithDebounce = (indexBloc, indexSerie, field, value, immediate = false) => {
-    // Mettre à jour immédiatement la valeur dans l'UI
+  // Mettre à jour uniquement la valeur d'un champ dans l'UI (sans calculs)
+  const updateSerieField = (indexBloc, indexSerie, field, value) => {
     const nouveauxBlocs = [...blocs]
     nouveauxBlocs[indexBloc].series[indexSerie][field] = value
     setBlocs(nouveauxBlocs)
-
-    // Si immediate est true, calculer tout de suite
-    if (immediate) {
-      updateSerie(indexBloc, indexSerie, field, value)
-      return
-    }
-
-    // Sinon, attendre 500ms après la dernière frappe
-    const key = `${indexBloc}-${indexSerie}-${field}`
-
-    if (typingTimeouts[key]) {
-      clearTimeout(typingTimeouts[key])
-    }
-
-    const timeoutId = setTimeout(() => {
-      updateSerie(indexBloc, indexSerie, field, value)
-    }, 500)
-
-    setTypingTimeouts({ ...typingTimeouts, [key]: timeoutId })
   }
 
   // Mettre à jour une série
@@ -2093,9 +2067,7 @@ END:VEVENT
           <div className="bloc-header">
             <div className="bloc-title">
               <h2 style={{ color: blocStyle.labelColor }}>
-                {(bloc.type || 'course') === 'echauffement' && 'Échauffement'}
-                {(bloc.type || 'course') === 'course' && `Course ${numeroCourse}`}
-                {(bloc.type || 'course') === 'recuperation' && 'Récupération'}
+                {getBlocTypeLabel(bloc.type || 'course', (bloc.type || 'course') === 'course' ? numeroCourse : null)}
               </h2>
               {(bloc.type || 'course') === 'course' && (
                 <TextField
@@ -2243,7 +2215,11 @@ END:VEVENT
                     value={serie.temps}
                     onChange={(e) => {
                       const formatted = formatTempsInput(e.target.value)
-                      updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
+                      updateSerieField(indexBloc, indexSerie, 'temps', formatted)
+                    }}
+                    onBlur={(e) => {
+                      const formatted = formatTempsInput(e.target.value)
+                      updateSerie(indexBloc, indexSerie, 'temps', formatted)
                     }}
                     onFocus={handleFocus}
                     placeholder="12345"
@@ -2304,7 +2280,11 @@ END:VEVENT
                     value={serie.allure}
                     onChange={(e) => {
                       const formatted = formatAllureInput(e.target.value)
-                      updateSerieWithDebounce(indexBloc, indexSerie, 'allure', formatted)
+                      updateSerieField(indexBloc, indexSerie, 'allure', formatted)
+                    }}
+                    onBlur={(e) => {
+                      const formatted = formatAllureInput(e.target.value)
+                      updateSerie(indexBloc, indexSerie, 'allure', formatted)
                     }}
                     onFocus={handleFocus}
                     placeholder="530"
@@ -2319,7 +2299,11 @@ END:VEVENT
                     value={serie.temps}
                     onChange={(e) => {
                       const formatted = formatTempsInput(e.target.value)
-                      updateSerieWithDebounce(indexBloc, indexSerie, 'temps', formatted)
+                      updateSerieField(indexBloc, indexSerie, 'temps', formatted)
+                    }}
+                    onBlur={(e) => {
+                      const formatted = formatTempsInput(e.target.value)
+                      updateSerie(indexBloc, indexSerie, 'temps', formatted)
                     }}
                     onFocus={handleFocus}
                     placeholder="12345"
@@ -2385,7 +2369,11 @@ END:VEVENT
                       value={serie.allureMin}
                       onChange={(e) => {
                         const formatted = formatAllureInput(e.target.value)
-                        updateSerieWithDebounce(indexBloc, indexSerie, 'allureMin', formatted)
+                        updateSerieField(indexBloc, indexSerie, 'allureMin', formatted)
+                      }}
+                      onBlur={(e) => {
+                        const formatted = formatAllureInput(e.target.value)
+                        updateSerie(indexBloc, indexSerie, 'allureMin', formatted)
                       }}
                       onFocus={handleFocus}
                       placeholder="500"
@@ -2401,7 +2389,11 @@ END:VEVENT
                       value={serie.tempsMin}
                       onChange={(e) => {
                         const formatted = formatTempsInput(e.target.value)
-                        updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMin', formatted)
+                        updateSerieField(indexBloc, indexSerie, 'tempsMin', formatted)
+                      }}
+                      onBlur={(e) => {
+                        const formatted = formatTempsInput(e.target.value)
+                        updateSerie(indexBloc, indexSerie, 'tempsMin', formatted)
                       }}
                       onFocus={handleFocus}
                       placeholder="12345"
@@ -2465,7 +2457,11 @@ END:VEVENT
                       value={serie.allureMax}
                       onChange={(e) => {
                         const formatted = formatAllureInput(e.target.value)
-                        updateSerieWithDebounce(indexBloc, indexSerie, 'allureMax', formatted)
+                        updateSerieField(indexBloc, indexSerie, 'allureMax', formatted)
+                      }}
+                      onBlur={(e) => {
+                        const formatted = formatAllureInput(e.target.value)
+                        updateSerie(indexBloc, indexSerie, 'allureMax', formatted)
                       }}
                       onFocus={handleFocus}
                       placeholder="530"
@@ -2481,7 +2477,11 @@ END:VEVENT
                       value={serie.tempsMax}
                       onChange={(e) => {
                         const formatted = formatTempsInput(e.target.value)
-                        updateSerieWithDebounce(indexBloc, indexSerie, 'tempsMax', formatted)
+                        updateSerieField(indexBloc, indexSerie, 'tempsMax', formatted)
+                      }}
+                      onBlur={(e) => {
+                        const formatted = formatTempsInput(e.target.value)
+                        updateSerie(indexBloc, indexSerie, 'tempsMax', formatted)
                       }}
                       onFocus={handleFocus}
                       placeholder="12345"
@@ -2657,15 +2657,8 @@ END:VEVENT
                     {(() => {
                       // Calculer le numéro de course
                       const numeroCourse = blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
-
-                      if (blocType === 'echauffement') {
-                        return 'Échauffement'
-                      } else if (blocType === 'course') {
-                        return `Course ${numeroCourse}${repetitionsBloc > 1 ? ` (×${repetitionsBloc})` : ''}`
-                      } else if (blocType === 'recuperation') {
-                        return 'Récupération'
-                      }
-                      return `Bloc ${indexBloc + 1}`
+                      const label = getBlocTypeLabel(blocType, blocType === 'course' ? numeroCourse : null)
+                      return blocType === 'course' && repetitionsBloc > 1 ? `${label} (×${repetitionsBloc})` : label
                     })()}
                   </div>
                   <div className="summary-series-list">
@@ -2973,15 +2966,8 @@ END:VEVENT
                                 {(() => {
                                   // Calculer le numéro de course
                                   const numeroCourse = seance.blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
-
-                                  if (blocType === 'echauffement') {
-                                    return 'Échauffement'
-                                  } else if (blocType === 'course') {
-                                    return `Course ${numeroCourse}${repetitionsBloc > 1 ? ` (×${repetitionsBloc})` : ''}`
-                                  } else if (blocType === 'recuperation') {
-                                    return 'Récupération'
-                                  }
-                                  return `Bloc ${indexBloc + 1}`
+                                  const label = getBlocTypeLabel(blocType, blocType === 'course' ? numeroCourse : null)
+                                  return blocType === 'course' && repetitionsBloc > 1 ? `${label} (×${repetitionsBloc})` : label
                                 })()}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
