@@ -1304,6 +1304,50 @@ END:VEVENT
     localStorage.setItem('plan-marathon-vma', value)
   }
 
+  // Remplir automatiquement marathon et semi à la perte de focus de la VMA
+  const autoFillFromVMA = (vmaValue) => {
+    // Si VMA est définie et que les allures marathon/semi sont vides, les remplir automatiquement
+    if (vmaValue) {
+      // Marathon : 80% de VMA par défaut
+      if (!allureMarathon) {
+        const allure = calculerAllureDepuisVMA(vmaValue, 80)
+        if (allure) {
+          const allureFormatee = formaterAllure(allure)
+          setAllureMarathon(allureFormatee)
+          localStorage.setItem('plan-marathon-allureMarathon', allureFormatee)
+
+          // Calculer aussi le temps marathon
+          const distanceMarathon = 42.195
+          const tempsSecondes = calculerTemps(distanceMarathon * 1000, allure)
+          if (tempsSecondes) {
+            const tempsFormate = formaterTemps(tempsSecondes)
+            setTempsMarathon(tempsFormate)
+            localStorage.setItem('plan-marathon-tempsMarathon', tempsFormate)
+          }
+        }
+      }
+
+      // Semi-marathon : 85% de VMA par défaut
+      if (!allureSemiMarathon) {
+        const allure = calculerAllureDepuisVMA(vmaValue, 85)
+        if (allure) {
+          const allureFormatee = formaterAllure(allure)
+          setAllureSemiMarathon(allureFormatee)
+          localStorage.setItem('plan-marathon-allureSemiMarathon', allureFormatee)
+
+          // Calculer aussi le temps semi-marathon
+          const distanceSemiMarathon = 21.0975
+          const tempsSecondes = calculerTemps(distanceSemiMarathon * 1000, allure)
+          if (tempsSecondes) {
+            const tempsFormate = formaterTemps(tempsSecondes)
+            setTempsSemiMarathon(tempsFormate)
+            localStorage.setItem('plan-marathon-tempsSemiMarathon', tempsFormate)
+          }
+        }
+      }
+    }
+  }
+
   // Mettre à jour l'allure marathon et calculer le temps
   const updateAllureMarathon = (value) => {
     setAllureMarathon(value)
@@ -2171,6 +2215,7 @@ END:VEVENT
               type="number"
               value={vma}
               onChange={(e) => updateVMA(e.target.value)}
+              onBlur={(e) => autoFillFromVMA(e.target.value)}
               onFocus={handleFocus}
               placeholder="Ex: 16"
               size="small"
