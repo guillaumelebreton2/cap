@@ -772,10 +772,20 @@ CALSCALE:GREGORIAN
         let label = ''
         
         switch (bloc.type) {
-          case 'echauffement': label = 'Echauffement'; break
-          case 'course': label = `Course ${indexBloc}`; break
-          case 'recuperation': label = 'Recuperation'; break
-          default: label = bloc.type || 'Course'
+          case 'echauffement': 
+            label = 'Echauffement'
+            break
+          case 'course': {
+            // Compter seulement les blocs de course précédents
+            const numeroCourse = seance.blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
+            label = `Course ${numeroCourse}`
+            break
+          }
+          case 'recuperation': 
+            label = 'Recuperation'
+            break
+          default: 
+            label = 'Course'
         }
         
         description += label
@@ -796,33 +806,109 @@ CALSCALE:GREGORIAN
             description += `${repetitionsSerie}x `
           }
 
-          // Distance
-          const distance = parseFloat(serie.distance) || 0
-          description += `${distance}m`
+          // Distance - gérer les plages
+          if (serie.typePlage === 'plage') {
+            const distanceMin = parseFloat(serie.distanceMin) || 0
+            const distanceMax = parseFloat(serie.distanceMax) || 0
+            if (distanceMin && distanceMax && distanceMin !== distanceMax) {
+              description += `${distanceMin}-${distanceMax}m`
+            } else {
+              description += `${distanceMin || distanceMax || 0}m`
+            }
+          } else {
+            const distance = parseFloat(serie.distance) || 0
+            description += `${distance}m`
+          }
 
-          // Allure si présente
-          if (serie.allure) {
+          // Allure - gérer les plages
+          if (serie.typePlage === 'plage' && serie.allureMin && serie.allureMax) {
+            description += ` @ ${serie.allureMin}-${serie.allureMax}/km`
+          } else if (serie.allure) {
             description += ` @ ${serie.allure}/km`
           }
 
-          // Temps si présent
-          if (serie.temps) {
+          // Temps - gérer les plages
+          if (serie.typePlage === 'plage' && serie.tempsMin && serie.tempsMax) {
+            description += ` en ${serie.tempsMin}-${serie.tempsMax}`
+          } else if (serie.temps) {
             description += ` en ${serie.temps}`
           }
 
           description += '\\n'
+
+          // Ajouter la récupération entre séries si elle existe
+          if (serie.recuperation && !serie.estRecuperation) {
+            const recup = serie.recuperation
+            description += '    + [Recup] '
+            description += `${repetitionsSerie}x `
+
+            // Distance récup
+            if (recup.typePlage === 'plage') {
+              const distanceMin = parseFloat(recup.distanceMin) || 0
+              const distanceMax = parseFloat(recup.distanceMax) || 0
+              if (distanceMin && distanceMax && distanceMin !== distanceMax) {
+                description += `${distanceMin}-${distanceMax}m`
+              } else {
+                description += `${distanceMin || distanceMax || 0}m`
+              }
+            } else {
+              const distance = parseFloat(recup.distance) || 0
+              description += `${distance}m`
+            }
+
+            // Allure récup
+            if (recup.typePlage === 'plage' && recup.allureMin && recup.allureMax) {
+              description += ` @ ${recup.allureMin}-${recup.allureMax}/km`
+            } else if (recup.allure) {
+              description += ` @ ${recup.allure}/km`
+            }
+
+            // Temps récup
+            if (recup.typePlage === 'plage' && recup.tempsMin && recup.tempsMax) {
+              description += ` en ${recup.tempsMin}-${recup.tempsMax}`
+            } else if (recup.temps) {
+              description += ` en ${recup.temps}`
+            }
+
+            description += '\\n'
+          }
         })
         description += '\\n'
       })
 
-      // Calculer la distance totale manuellement
+      // Calculer la distance totale manuellement en gérant les plages
       let distanceTotale = 0
       seance.blocs.forEach(bloc => {
         const repetitionsBloc = parseInt(bloc.repetitions) || 1
         bloc.series.forEach(serie => {
           const repetitionsSerie = parseInt(serie.repetitions) || 1
-          const distance = parseFloat(serie.distance) || 0
+          let distance = 0
+          
+          if (serie.typePlage === 'plage') {
+            const distanceMin = parseFloat(serie.distanceMin) || 0
+            const distanceMax = parseFloat(serie.distanceMax) || 0
+            distance = distanceMax || distanceMin // Prendre le max, ou min si max pas défini
+          } else {
+            distance = parseFloat(serie.distance) || 0
+          }
+          
           distanceTotale += distance * repetitionsSerie * repetitionsBloc
+
+          // Ajouter la récupération
+          if (serie.recuperation && !serie.estRecuperation) {
+            const recup = serie.recuperation
+            let distanceRecup = 0
+            
+            if (recup.typePlage === 'plage') {
+              const distanceMin = parseFloat(recup.distanceMin) || 0
+              const distanceMax = parseFloat(recup.distanceMax) || 0
+              distanceRecup = distanceMax || distanceMin
+            } else {
+              distanceRecup = parseFloat(recup.distance) || 0
+            }
+            
+            distanceTotale += distanceRecup * repetitionsSerie * repetitionsBloc
+          }
         })
       })
 
