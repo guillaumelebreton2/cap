@@ -877,43 +877,62 @@ CALSCALE:GREGORIAN
       })
 
       // Calculer la distance totale manuellement en gérant les plages
-      let distanceTotale = 0
+      let distanceTotaleMin = 0
+      let distanceTotaleMax = 0
+      let hasPlage = false
+      
       seance.blocs.forEach(bloc => {
         const repetitionsBloc = parseInt(bloc.repetitions) || 1
         bloc.series.forEach(serie => {
           const repetitionsSerie = parseInt(serie.repetitions) || 1
-          let distance = 0
+          let distanceMin = 0
+          let distanceMax = 0
           
           if (serie.typePlage === 'plage') {
-            const distanceMin = parseFloat(serie.distanceMin) || 0
-            const distanceMax = parseFloat(serie.distanceMax) || 0
-            distance = distanceMax || distanceMin // Prendre le max, ou min si max pas défini
+            distanceMin = parseFloat(serie.distanceMin) || 0
+            distanceMax = parseFloat(serie.distanceMax) || 0
+            if (distanceMin !== distanceMax && distanceMin > 0 && distanceMax > 0) {
+              hasPlage = true
+            }
           } else {
-            distance = parseFloat(serie.distance) || 0
+            const distance = parseFloat(serie.distance) || 0
+            distanceMin = distance
+            distanceMax = distance
           }
           
-          distanceTotale += distance * repetitionsSerie * repetitionsBloc
+          distanceTotaleMin += distanceMin * repetitionsSerie * repetitionsBloc
+          distanceTotaleMax += distanceMax * repetitionsSerie * repetitionsBloc
 
           // Ajouter la récupération
           if (serie.recuperation && !serie.estRecuperation) {
             const recup = serie.recuperation
-            let distanceRecup = 0
+            let distanceRecupMin = 0
+            let distanceRecupMax = 0
             
             if (recup.typePlage === 'plage') {
-              const distanceMin = parseFloat(recup.distanceMin) || 0
-              const distanceMax = parseFloat(recup.distanceMax) || 0
-              distanceRecup = distanceMax || distanceMin
+              distanceRecupMin = parseFloat(recup.distanceMin) || 0
+              distanceRecupMax = parseFloat(recup.distanceMax) || 0
+              if (distanceRecupMin !== distanceRecupMax && distanceRecupMin > 0 && distanceRecupMax > 0) {
+                hasPlage = true
+              }
             } else {
-              distanceRecup = parseFloat(recup.distance) || 0
+              const distance = parseFloat(recup.distance) || 0
+              distanceRecupMin = distance
+              distanceRecupMax = distance
             }
             
-            distanceTotale += distanceRecup * repetitionsSerie * repetitionsBloc
+            distanceTotaleMin += distanceRecupMin * repetitionsSerie * repetitionsBloc
+            distanceTotaleMax += distanceRecupMax * repetitionsSerie * repetitionsBloc
           }
         })
       })
 
-      if (distanceTotale > 0) {
-        description += `Distance totale: ${(distanceTotale/1000).toFixed(2)} km\\n\\n`
+      if (distanceTotaleMin > 0 || distanceTotaleMax > 0) {
+        if (hasPlage && distanceTotaleMin !== distanceTotaleMax) {
+          description += `Distance totale: ${(distanceTotaleMin/1000).toFixed(2)} - ${(distanceTotaleMax/1000).toFixed(2)} km\\n\\n`
+        } else {
+          description += `Distance totale: ${(distanceTotaleMax/1000).toFixed(2)} km\\n\\n`
+        }
       }
 
       // Ajouter le lien (sans emoji et simplifié)
