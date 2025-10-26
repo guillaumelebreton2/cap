@@ -746,235 +746,107 @@ function App() {
 VERSION:2.0
 PRODID:-//Plan Marathon//Calculateur d'allures//FR
 CALSCALE:GREGORIAN
-METHOD:PUBLISH
-X-WR-CALNAME:Séances Marathon
-X-WR-TIMEZONE:Europe/Paris
 `
 
     seances.forEach(seance => {
-      // Déterminer la date de l'événement
-      const dateSeance = seance.dateSeance ? new Date(seance.dateSeance) : new Date(seance.dateCreation)
+      // Date de la séance ou demain par défaut
+      const maintenant = new Date()
+      const dateSeance = seance.dateSeance ? new Date(seance.dateSeance + 'T08:00:00') : new Date(maintenant.getTime() + 24*60*60*1000)
+      
+      const heureDebut = new Date(dateSeance)
+      heureDebut.setHours(8, 0, 0, 0)
+      
+      const heureFin = new Date(heureDebut.getTime() + 2*60*60*1000) // 2 heures plus tard
 
-      // Calculer la durée totale de la séance
-      let dureeSecondes = 0
+      // Format de date iCalendar
+      const formatDateICS = (date) => {
+        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+      }
+
+      // Construire la description avec les détails
+      let description = `Seance: ${seance.nom}\\n\\n`
+      
+      // Ajouter les blocs de la séance
+      seance.blocs.forEach((bloc, indexBloc) => {
+        const repetitionsBloc = parseInt(bloc.repetitions) || 1
+        let label = ''
+        
+        switch (bloc.type) {
+          case 'echauffement': label = 'Echauffement'; break
+          case 'course': label = `Course ${indexBloc}`; break
+          case 'recuperation': label = 'Recuperation'; break
+          default: label = bloc.type || 'Course'
+        }
+        
+        description += label
+        if (repetitionsBloc > 1) {
+          description += ` (x${repetitionsBloc})`
+        }
+        description += ':\\n'
+
+        bloc.series.forEach(serie => {
+          const repetitionsSerie = parseInt(serie.repetitions) || 1
+          description += '  - '
+          
+          if (serie.estRecuperation) {
+            description += '[Recup] '
+          }
+          
+          if (repetitionsSerie > 1) {
+            description += `${repetitionsSerie}x `
+          }
+
+          // Distance
+          const distance = parseFloat(serie.distance) || 0
+          description += `${distance}m`
+
+          // Allure si présente
+          if (serie.allure) {
+            description += ` @ ${serie.allure}/km`
+          }
+
+          // Temps si présent
+          if (serie.temps) {
+            description += ` en ${serie.temps}`
+          }
+
+          description += '\\n'
+        })
+        description += '\\n'
+      })
+
+      // Calculer la distance totale manuellement
+      let distanceTotale = 0
       seance.blocs.forEach(bloc => {
         const repetitionsBloc = parseInt(bloc.repetitions) || 1
         bloc.series.forEach(serie => {
           const repetitionsSerie = parseInt(serie.repetitions) || 1
-
-          // Durée de la série
-          if (serie.typePlage === 'plage') {
-            // Pour les plages, prendre la moyenne des temps min/max
-            const tempsMinSecondes = parserTemps(serie.tempsMin)
-            const tempsMaxSecondes = parserTemps(serie.tempsMax)
-            if (tempsMinSecondes && tempsMaxSecondes) {
-              const tempsMoyen = (tempsMinSecondes + tempsMaxSecondes) / 2
-              dureeSecondes += tempsMoyen * repetitionsSerie * repetitionsBloc
-            }
-          } else {
-            const tempsSecondes = parserTemps(serie.temps)
-            if (tempsSecondes) {
-              dureeSecondes += tempsSecondes * repetitionsSerie * repetitionsBloc
-            }
-          }
-
-          // Durée de la récupération attachée
-          if (serie.recuperation) {
-            const recup = serie.recuperation
-            if (recup.typePlage === 'plage') {
-              const tempsMinSecondes = parserTemps(recup.tempsMin)
-              const tempsMaxSecondes = parserTemps(recup.tempsMax)
-              if (tempsMinSecondes && tempsMaxSecondes) {
-                const tempsMoyen = (tempsMinSecondes + tempsMaxSecondes) / 2
-                dureeSecondes += tempsMoyen * repetitionsSerie * repetitionsBloc
-              }
-            } else {
-              const tempsSecondes = parserTemps(recup.temps)
-              if (tempsSecondes) {
-                dureeSecondes += tempsSecondes * repetitionsSerie * repetitionsBloc
-              }
-            }
-          }
+          const distance = parseFloat(serie.distance) || 0
+          distanceTotale += distance * repetitionsSerie * repetitionsBloc
         })
       })
 
-      // Si pas de durée calculée, mettre 1h par défaut
-      if (dureeSecondes === 0) {
-        dureeSecondes = 3600
+      if (distanceTotale > 0) {
+        description += `Distance totale: ${(distanceTotale/1000).toFixed(2)} km\\n\\n`
       }
 
-      // Heure de début : 8h00 par défaut
-      const heureDebut = new Date(dateSeance)
-      heureDebut.setHours(8, 0, 0, 0)
-
-      // Heure de fin
-      const heureFin = new Date(heureDebut.getTime() + dureeSecondes * 1000)
-
-      // Formater les dates au format iCalendar (YYYYMMDDTHHMMSS)
-      const formatDateICS = (date) => {
-        const year = date.getFullYear()
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const day = String(date.getDate()).padStart(2, '0')
-        const hours = String(date.getHours()).padStart(2, '0')
-        const minutes = String(date.getMinutes()).padStart(2, '0')
-        const seconds = String(date.getSeconds()).padStart(2, '0')
-        return `${year}${month}${day}T${hours}${minutes}${seconds}`
-      }
-
-      // Générer la description détaillée
-      let description = ``
-      
-      if (seance.commentaire) {
-        description += `${seance.commentaire}\n`
-      }
-      description += `\n`
-
-      seance.blocs.forEach((bloc, indexBloc) => {
-        const repetitionsBloc = parseInt(bloc.repetitions) || 1
-        const blocType = bloc.type || 'course'
-
-        // Calculer le numéro de course (compter seulement les blocs de type 'course' jusqu'à cet index)
-        const numeroCourse = seance.blocs.slice(0, indexBloc + 1).filter(b => (b.type || 'course') === 'course').length
-
-        // Titre du bloc selon le type
-        const label = getBlocTypeLabel(blocType, blocType === 'course' ? numeroCourse : null)
-        description += label
-        if (blocType === 'course' && repetitionsBloc > 1) {
-          description += ` (×${repetitionsBloc})`
-        }
-
-        description += `:\n`
-
-        bloc.series.forEach((serie) => {
-          const repetitionsSerie = parseInt(serie.repetitions) || 1
-
-          // Affichage de la série
-          description += `  - `
-
-          // Marqueur [Récup] seulement pour les blocs de type 'course'
-          if (serie.estRecuperation && blocType === 'course') {
-            description += `[Récup] `
-          }
-
-          if (blocType === 'course') {
-            description += `${repetitionsSerie}× `
-          }
-
-          // Distance
-          if (serie.typePlage === 'plage') {
-            const distanceMin = parseFloat(serie.distanceMin || serie.distance) || 0
-            const distanceMax = parseFloat(serie.distanceMax || serie.distance) || 0
-            if (serie.distanceMin && serie.distanceMax) {
-              description += `${distanceMin}-${distanceMax}m`
-            } else {
-              description += `${parseFloat(serie.distance) || 0}m`
-            }
-          } else {
-            description += `${parseFloat(serie.distance) || 0}m`
-          }
-
-          // Allure
-          if (serie.typePlage === 'plage' && serie.allureMin && serie.allureMax) {
-            description += ` @ ${serie.allureMin}-${serie.allureMax}/km`
-            if (serie.pourcentageVMAMin && serie.pourcentageVMAMax) {
-              description += ` (${serie.pourcentageVMAMin}-${serie.pourcentageVMAMax}% VMA)`
-            }
-          } else if (serie.allure) {
-            description += ` @ ${serie.allure}/km`
-            if (serie.pourcentageVMA) {
-              description += ` (${serie.pourcentageVMA}% VMA)`
-            }
-          }
-
-          // Temps
-          if (serie.typePlage === 'plage' && serie.tempsMin && serie.tempsMax) {
-            description += ` en ${formaterTempsLisible(serie.tempsMin)}-${formaterTempsLisible(serie.tempsMax)}`
-          } else if (serie.temps) {
-            description += ` en ${formaterTempsLisible(serie.temps)}`
-          }
-
-          description += `\n`
-
-          // Affichage de la récupération attachée (seulement pour les blocs de type 'course')
-          if (serie.recuperation && !serie.estRecuperation && blocType === 'course') {
-            const recup = serie.recuperation
-            description += `    + [Récup] `
-            description += `${repetitionsSerie}× `
-
-            // Distance récup
-            if (recup.typePlage === 'plage') {
-              const distanceMin = parseFloat(recup.distanceMin || recup.distance) || 0
-              const distanceMax = parseFloat(recup.distanceMax || recup.distance) || 0
-              if (recup.distanceMin && recup.distanceMax) {
-                description += `${distanceMin}-${distanceMax}m`
-              } else {
-                description += `${parseFloat(recup.distance) || 0}m`
-              }
-            } else {
-              description += `${parseFloat(recup.distance) || 0}m`
-            }
-
-            // Allure récup
-            if (recup.typePlage === 'plage' && recup.allureMin && recup.allureMax) {
-              description += ` @ ${recup.allureMin}-${recup.allureMax}/km`
-              if (recup.pourcentageVMAMin && recup.pourcentageVMAMax) {
-                description += ` (${recup.pourcentageVMAMin}-${recup.pourcentageVMAMax}% VMA)`
-              }
-            } else if (recup.allure) {
-              description += ` @ ${recup.allure}/km`
-              if (recup.pourcentageVMA) {
-                description += ` (${recup.pourcentageVMA}% VMA)`
-              }
-            }
-
-            // Temps récup
-            if (recup.typePlage === 'plage' && recup.tempsMin && recup.tempsMax) {
-              description += ` en ${formaterTempsLisible(recup.tempsMin)}-${formaterTempsLisible(recup.tempsMax)}`
-            } else if (recup.temps) {
-              description += ` en ${formaterTempsLisible(recup.temps)}`
-            }
-
-            description += `\n`
-          }
-        })
-        description += `\n`
-      })
-
-      // Calculer la distance totale
-      const distanceResult = calculerDistanceTotaleSeance(seance)
-      if (distanceResult.isRange) {
-        description += `Distance totale: ${(distanceResult.min / 1000).toFixed(2)} - ${(distanceResult.max / 1000).toFixed(2)} km`
-      } else {
-        description += `Distance totale: ${(distanceResult / 1000).toFixed(2)} km`
-      }
-
-      // Ajouter le lien vers le résumé à la fin de la description
+      // Ajouter le lien (sans emoji et simplifié)
       const urlSeance = genererURLSeance(seance)
       if (urlSeance) {
-        description += `\n\n🔗 Lien vers le résumé détaillé:\n${urlSeance}`
+        description += `Lien: ${urlSeance}`
       }
 
-      // Échapper la description pour le format iCalendar (RFC 5545)
-      const escapeICalText = (text) => {
-        return text
-          .replace(/\\/g, '\\\\')  // Échapper les backslashes
-          .replace(/;/g, '\\;')    // Échapper les point-virgules
-          .replace(/,/g, '\\,')    // Échapper les virgules
-          .replace(/\n/g, '\\n')   // Échapper les retours à la ligne
-      }
+      // Nettoyer le titre (supprimer caractères problématiques)
+      const titreClean = seance.nom.replace(/[^\w\s\-']/g, '').substring(0, 50)
 
-      // Créer l'événement
       icsContent += `BEGIN:VEVENT
-UID:${seance.id}@plan-marathon
+UID:${seance.id || Date.now()}-${Math.random().toString(36).substr(2, 9)}@plan-marathon
 DTSTAMP:${formatDateICS(new Date())}
 DTSTART:${formatDateICS(heureDebut)}
 DTEND:${formatDateICS(heureFin)}
-SUMMARY:${seance.nom}
-DESCRIPTION:${escapeICalText(description)}
-${urlSeance ? `URL:${urlSeance}` : ''}
+SUMMARY:${titreClean}
+DESCRIPTION:${description}
 CATEGORIES:Sport,Running,Marathon
-STATUS:CONFIRMED
-SEQUENCE:0
 END:VEVENT
 `
     })
