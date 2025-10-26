@@ -822,14 +822,22 @@ CALSCALE:GREGORIAN
 
           // Allure - gérer les plages
           if (serie.typePlage === 'plage' && serie.allureMin && serie.allureMax) {
-            description += ` @ ${serie.allureMin}-${serie.allureMax}/km`
+            if (serie.allureMin === serie.allureMax) {
+              description += ` @ ${serie.allureMin}/km`
+            } else {
+              description += ` @ ${serie.allureMin}-${serie.allureMax}/km`
+            }
           } else if (serie.allure) {
             description += ` @ ${serie.allure}/km`
           }
 
           // Temps - gérer les plages
           if (serie.typePlage === 'plage' && serie.tempsMin && serie.tempsMax) {
-            description += ` en ${serie.tempsMin}-${serie.tempsMax}`
+            if (serie.tempsMin === serie.tempsMax) {
+              description += ` en ${serie.tempsMin}`
+            } else {
+              description += ` en ${serie.tempsMin}-${serie.tempsMax}`
+            }
           } else if (serie.temps) {
             description += ` en ${serie.temps}`
           }
@@ -858,14 +866,22 @@ CALSCALE:GREGORIAN
 
             // Allure récup
             if (recup.typePlage === 'plage' && recup.allureMin && recup.allureMax) {
-              description += ` @ ${recup.allureMin}-${recup.allureMax}/km`
+              if (recup.allureMin === recup.allureMax) {
+                description += ` @ ${recup.allureMin}/km`
+              } else {
+                description += ` @ ${recup.allureMin}-${recup.allureMax}/km`
+              }
             } else if (recup.allure) {
               description += ` @ ${recup.allure}/km`
             }
 
             // Temps récup
             if (recup.typePlage === 'plage' && recup.tempsMin && recup.tempsMax) {
-              description += ` en ${recup.tempsMin}-${recup.tempsMax}`
+              if (recup.tempsMin === recup.tempsMax) {
+                description += ` en ${recup.tempsMin}`
+              } else {
+                description += ` en ${recup.tempsMin}-${recup.tempsMax}`
+              }
             } else if (recup.temps) {
               description += ` en ${recup.temps}`
             }
