@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -56,8 +56,62 @@ function App() {
   // Référence vers le bloc résumé pour pouvoir scroller vers lui
   const resumeRef = useRef(null)
 
+  // Décoder les données de la séance depuis l'URL
+  const decoderSeanceDepuisURL = (donneesEncodees) => {
+    try {
+      const donneesJSON = decodeURIComponent(atob(donneesEncodees))
+      const seance = JSON.parse(donneesJSON)
+      return seance
+    } catch (error) {
+      console.error('Erreur lors du décodage de la séance:', error)
+      return null
+    }
+  }
+
+  // Charger une séance depuis l'URL
+  const chargerSeanceDepuisURL = useCallback(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const seanceEncodee = urlParams.get('s') || urlParams.get('seance') // Support des deux formats pour rétrocompatibilité
+    
+    if (seanceEncodee) {
+      const seance = decoderSeanceDepuisURL(seanceEncodee)
+      if (seance) {
+        // Charger les données dans l'interface
+        setNomSeance(seance.nom || '')
+        setDateSeance(seance.dateSeance || '')
+        setCommentaireSeance(seance.commentaire || '')
+        if (seance.vma) setVma(seance.vma)
+        if (seance.allureMarathon) setAllureMarathon(seance.allureMarathon)
+        setBlocs(seance.blocs || [])
+        
+        // Si l'URL contient une ancre #resume, scroller vers le résumé après un délai
+        if (window.location.hash === '#resume') {
+          setTimeout(() => {
+            const resumeElement = document.getElementById('resume')
+            if (resumeElement) {
+              resumeElement.scrollIntoView({ behavior: 'smooth' })
+            }
+          }, 100)
+        }
+        
+        // Nettoyer l'URL (garder l'ancre si elle existe)
+        const newUrl = window.location.hash ? 
+          window.location.pathname + window.location.hash : 
+          window.location.pathname
+        window.history.replaceState({}, document.title, newUrl)
+        
+        return true
+      }
+    }
+    return false
+  }, [setNomSeance, setDateSeance, setCommentaireSeance, setVma, setAllureMarathon, setBlocs])
+
   // Charger l'historique depuis localStorage au démarrage
   useEffect(() => {
+    // D'abord, essayer de charger une séance depuis l'URL
+    const seanceChargeeDepuisURL = chargerSeanceDepuisURL()
+    
+    // Ensuite, charger l'historique et les préférences
     const historiqueStocke = localStorage.getItem('plan-marathon-historique')
     if (historiqueStocke) {
       setHistorique(JSON.parse(historiqueStocke))
@@ -74,10 +128,12 @@ function App() {
       setOrdreManuel(JSON.parse(ordreManuelStocke))
     }
 
-    // Charger VMA
-    const vmaStocke = localStorage.getItem('plan-marathon-vma')
-    if (vmaStocke) {
-      setVma(vmaStocke)
+    // Charger VMA seulement si aucune séance n'a été chargée depuis l'URL
+    if (!seanceChargeeDepuisURL) {
+      const vmaStocke = localStorage.getItem('plan-marathon-vma')
+      if (vmaStocke) {
+        setVma(vmaStocke)
+      }
     }
 
     // Charger allure et temps marathon
@@ -101,7 +157,7 @@ function App() {
     if (tempsSemiMarathonStocke) {
       setTempsSemiMarathon(tempsSemiMarathonStocke)
     }
-  }, [])
+  }, [chargerSeanceDepuisURL])
 
   // Sauvegarder l'historique dans localStorage
   const sauvegarderHistorique = (nouvelleSeance) => {
@@ -654,6 +710,36 @@ function App() {
     alert(`${historique.length} séance(s) actualisée(s) !`)
   }
 
+  // Encoder les données de la séance pour l'URL
+  const encoderSeancePourURL = (seance) => {
+    const donneesSeance = {
+      nom: seance.nom,
+      dateSeance: seance.dateSeance,
+      vma: seance.vma,
+      allureMarathon: seance.allureMarathon,
+      blocs: seance.blocs,
+      commentaire: seance.commentaire
+    }
+    
+    try {
+      const donneesJSON = JSON.stringify(donneesSeance)
+      const donneesEncodees = btoa(encodeURIComponent(donneesJSON))
+      return donneesEncodees
+    } catch (error) {
+      console.error('Erreur lors de l\'encodage de la séance:', error)
+      return null
+    }
+  }
+
+  // Générer l'URL de la séance (version compacte)
+  const genererURLSeance = (seance) => {
+    const donneesEncodees = encoderSeancePourURL(seance)
+    if (!donneesEncodees) return null
+    
+    const baseURL = window.location.origin + window.location.pathname
+    return `${baseURL}?s=${donneesEncodees}#resume`
+  }
+
   // Générer le contenu .ics pour des séances
   const genererICS = (seances) => {
     let icsContent = `BEGIN:VCALENDAR
@@ -737,10 +823,11 @@ X-WR-TIMEZONE:Europe/Paris
 
       // Générer la description détaillée
       let description = ``
+      
       if (seance.commentaire) {
-        description += `${seance.commentaire}\\n`
+        description += `${seance.commentaire}\n`
       }
-      description += `\\n`
+      description += `\n`
 
       seance.blocs.forEach((bloc, indexBloc) => {
         const repetitionsBloc = parseInt(bloc.repetitions) || 1
@@ -756,7 +843,7 @@ X-WR-TIMEZONE:Europe/Paris
           description += ` (×${repetitionsBloc})`
         }
 
-        description += `:\\n`
+        description += `:\n`
 
         bloc.series.forEach((serie) => {
           const repetitionsSerie = parseInt(serie.repetitions) || 1
@@ -806,7 +893,7 @@ X-WR-TIMEZONE:Europe/Paris
             description += ` en ${formaterTempsLisible(serie.temps)}`
           }
 
-          description += `\\n`
+          description += `\n`
 
           // Affichage de la récupération attachée (seulement pour les blocs de type 'course')
           if (serie.recuperation && !serie.estRecuperation && blocType === 'course') {
@@ -847,10 +934,10 @@ X-WR-TIMEZONE:Europe/Paris
               description += ` en ${formaterTempsLisible(recup.temps)}`
             }
 
-            description += `\\n`
+            description += `\n`
           }
         })
-        description += `\\n`
+        description += `\n`
       })
 
       // Calculer la distance totale
@@ -861,6 +948,21 @@ X-WR-TIMEZONE:Europe/Paris
         description += `Distance totale: ${(distanceResult / 1000).toFixed(2)} km`
       }
 
+      // Ajouter le lien vers le résumé à la fin de la description
+      const urlSeance = genererURLSeance(seance)
+      if (urlSeance) {
+        description += `\n\n🔗 Lien vers le résumé détaillé:\n${urlSeance}`
+      }
+
+      // Échapper la description pour le format iCalendar (RFC 5545)
+      const escapeICalText = (text) => {
+        return text
+          .replace(/\\/g, '\\\\')  // Échapper les backslashes
+          .replace(/;/g, '\\;')    // Échapper les point-virgules
+          .replace(/,/g, '\\,')    // Échapper les virgules
+          .replace(/\n/g, '\\n')   // Échapper les retours à la ligne
+      }
+
       // Créer l'événement
       icsContent += `BEGIN:VEVENT
 UID:${seance.id}@plan-marathon
@@ -868,7 +970,8 @@ DTSTAMP:${formatDateICS(new Date())}
 DTSTART:${formatDateICS(heureDebut)}
 DTEND:${formatDateICS(heureFin)}
 SUMMARY:${seance.nom}
-DESCRIPTION:${description}
+DESCRIPTION:${escapeICalText(description)}
+${urlSeance ? `URL:${urlSeance}` : ''}
 CATEGORIES:Sport,Running,Marathon
 STATUS:CONFIRMED
 SEQUENCE:0
@@ -2174,6 +2277,36 @@ END:VEVENT
     return haPlage ? { min: distanceMin, max: distanceMax, isRange: true } : distanceMin
   }
 
+  // Copier le lien de la séance actuelle
+  const copierLienSeance = () => {
+    const seanceActuelle = {
+      nom: nomSeance,
+      dateSeance,
+      vma,
+      allureMarathon,
+      blocs,
+      commentaire: commentaireSeance
+    }
+    
+    const urlSeance = genererURLSeance(seanceActuelle)
+    if (urlSeance) {
+      navigator.clipboard.writeText(urlSeance).then(() => {
+        alert('Lien de la séance copié dans le presse-papiers!')
+      }).catch(() => {
+        // Fallback pour les navigateurs qui ne supportent pas l'API clipboard
+        const textArea = document.createElement('textarea')
+        textArea.value = urlSeance
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+        alert('Lien de la séance copié dans le presse-papiers!')
+      })
+    } else {
+      alert('Erreur lors de la génération du lien de la séance')
+    }
+  }
+
   // Sauvegarder la séance (création ou mise à jour)
   const sauvegarderSeance = () => {
     if (!nomSeance.trim()) {
@@ -2339,6 +2472,14 @@ END:VEVENT
               disabled={blocs.length === 0 || nomSeance.includes('(Aperçu)')}
             >
               {seanceEnCoursEdition ? 'Mettre à jour' : 'Sauvegarder'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={copierLienSeance}
+              disabled={blocs.length === 0}
+              title="Copier le lien de partage de cette séance"
+            >
+              🔗 Copier lien
             </button>
           </div>
           <TextField
@@ -2971,7 +3112,7 @@ END:VEVENT
       })}
 
       {blocs.length > 0 && (
-        <div ref={resumeRef} className="summary">
+        <div ref={resumeRef} id="resume" className="summary">
           <h2>Résumé de la séance</h2>
           <div className="summary-grid">
             <div className="summary-card">
